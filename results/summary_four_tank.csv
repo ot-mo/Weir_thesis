@@ -16,3 +16,8 @@ trial,decision,score,validation_score,reason
 15,ROLLBACK,64994.698,,
 16,REJECTED_SECURITY,,,"expected exactly one top-level def supervise(...), found 0"
 17,ROLLBACK,64994.698,,
+18,PROMOTED,64994.698,69494.69799999999,
+19,ROLLBACK,64994.698,,
+20,ROLLBACK,64994.698,,
+21,ROLLBACK,64994.698,,
+22,ROLLBACK,64994.698,,

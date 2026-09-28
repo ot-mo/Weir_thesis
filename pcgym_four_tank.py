@@ -15,27 +15,50 @@ generated_supervisors_two_tank/current_supervisor.py can run against this
 plant with zero code changes.
 
 Setup notes (found empirically - see conversation, not in the PC-Gym docs):
-- `integration_method: 'jax'` is required on Windows; the default 'casadi'
-  integrator fails to load its native CVODES plugin DLL here.
 - dt=1.0s; the plant's natural settling time is ~100-300s, an order of
   magnitude slower than our own tank_sim.py.
 - Default gamma_1=gamma_2=0.2 puts this in the "non-minimum-phase" regime
   (gamma_1+gamma_2 < 1): most pump flow is routed through the cross-coupling
   path, which is deliberately harder for decentralized PID and is why the
   PID-only baseline below is slow/oscillatory rather than badly tuned.
-- A pump output floor (>= 1.0, not 0.0) is necessary: letting either pump
-  hit exactly zero drains its tank toward 0, and the sqrt(h) term in the
-  plant's dynamics has a singular derivative there, which crashes PC-Gym's
-  adaptive-step JAX integrator (EquinoxRuntimeError).
 - Max achievable steady state at full 12V on both pumps is h1~=0.50,
   h2~=0.61 - setpoints must stay comfortably below that.
+
+CRITICAL HISTORY - why this file bypasses pcgym.make_env entirely and
+integrates the model directly instead: the original version used
+`pcgym.make_env(...)` with `integration_method='jax'` (the default 'casadi'
+path fails on Windows - its native CVODES plugin DLL won't load here) and
+injected faults by mutating `env.model.a1`/`a2` at runtime. This silently
+had ZERO effect on the actual simulated dynamics for two independent
+reasons, discovered only after ~20 training trials never once produced a
+real detection: (1) `make_env.reset()` builds a brand-new
+`integration_engine`, whose own `__init__` calls `make_env(env_params)`
+AGAIN internally, so `env.int_eng.env` is a second, separate model instance
+from `env` itself (`env.int_eng.env is env` is False) - the real stepping
+code reads `env.int_eng.env.model`, not `env.model`. (2) Even after fixing
+that, PC-Gym's JAX integration path still showed no effect - confirmed via
+direct testing that PC-Gym's JAX/diffrax stepping caches/traces the dynamics
+function in a way that doesn't pick up later Python-level attribute
+mutations on the model object. Every "fault" scenario in every four-tank
+experiment before this fix was therefore actually running completely
+fault-free the whole time, which is the real reason detection never worked -
+not a threshold-tuning or window-size problem, though those were real,
+separately-fixed issues too. The permanent fix: instantiate
+`pcgym.model_classes.four_tank(int_method="numpy")` directly (confirmed
+mutating `.a1`/`.a2` on this object takes effect immediately, since it's
+plain numpy with no tracing/caching) and integrate it ourselves with simple
+explicit Euler steps, exactly like tank_sim.py and two_tank_sim.py already
+do. This also incidentally eliminates the earlier CasADi DLL issue and a
+pump-output-floor workaround that was needed for PC-Gym's adaptive JAX
+integrator (whose sqrt(h) singularity at h=0 doesn't affect a fixed-step
+Euler loop the same way).
 """
 
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 import numpy as np
-import pcgym
+from pcgym.model_classes import four_tank
 
 from PID import PIDController
 from supervisor_security import call_with_timeout
@@ -68,25 +91,17 @@ class FourTankScenarioConfig:
     supervisor_timeout_s: float = 0.5
 
 
-def _build_env(scenario: FourTankScenarioConfig):
-    nsteps = int(scenario.sim_time / scenario.dt)
-    sp1 = [scenario.nominal_setpoint1] * nsteps
-    sp2 = [scenario.nominal_setpoint2] * nsteps
-    action_space = {"low": np.array([0.0, 0.0]), "high": np.array([12.0, 12.0])}
-    observation_space = {"low": np.array([0.0] * 6), "high": np.array([2.0] * 6)}
-    env_params = {
-        "N": nsteps,
-        "tsim": scenario.sim_time,
-        "SP": {"h1": sp1, "h2": sp2},
-        "o_space": observation_space,
-        "a_space": action_space,
-        "x0": np.array(list(scenario.initial_levels) + [scenario.nominal_setpoint1, scenario.nominal_setpoint2]),
-        "model": "four_tank",
-        "integration_method": "jax",
-        "normalise_a": False,
-        "normalise_o": False,
-    }
-    return pcgym.make_env(env_params), nsteps
+def _make_plant():
+    """Direct instantiation of PC-Gym's validated four_tank physics, bypassing
+    pcgym.make_env's gym.Env/integration-engine wrapper entirely (see the
+    CRITICAL note in the module docstring for why: both the JAX and CasADi
+    integration paths through that wrapper broke fault injection or crashed
+    on this machine). int_method='numpy' selects the model's plain
+    numpy/np.sqrt code path instead of jax.numpy, so a plain explicit-Euler
+    loop - the same pattern tank_sim.py and two_tank_sim.py already use -
+    integrates it directly and reliably.
+    """
+    return four_tank(int_method="numpy")
 
 
 def pid_only_supervisor(telemetry_window, active_setpoints, nominal_targets):
@@ -114,8 +129,9 @@ def _count_failure_points(failure_points: list) -> dict:
 
 
 def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> dict:
-    env, nsteps = _build_env(scenario)
-    obs, _ = env.reset()
+    model = _make_plant()
+    x = np.array(scenario.initial_levels, dtype=float)  # [h1, h2, h3, h4]
+    nsteps = int(scenario.sim_time / scenario.dt)
 
     pid1 = PIDController(Kp=scenario.pid_kp, Ki=scenario.pid_ki, Kd=scenario.pid_kd,
                           setpoint=scenario.nominal_setpoint1, output_limits=scenario.pump_output_limits)
@@ -136,27 +152,28 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
         t = t_step * scenario.dt
 
         if scenario.leak1_onset_s is not None and t == scenario.leak1_onset_s:
-            env.model.a1 = A1_NOMINAL * scenario.leak1_multiplier
+            model.a1 = A1_NOMINAL * scenario.leak1_multiplier
         if scenario.leak1_offset_s is not None and t == scenario.leak1_offset_s:
-            env.model.a1 = A1_NOMINAL
+            model.a1 = A1_NOMINAL
         if scenario.leak2_onset_s is not None and t == scenario.leak2_onset_s:
-            env.model.a2 = A2_NOMINAL * scenario.leak2_multiplier
+            model.a2 = A2_NOMINAL * scenario.leak2_multiplier
         if scenario.leak2_offset_s is not None and t == scenario.leak2_offset_s:
-            env.model.a2 = A2_NOMINAL
+            model.a2 = A2_NOMINAL
 
         fault_active = {
-            "tank1": abs(env.model.a1 - A1_NOMINAL) > 1e-9,
-            "tank2": abs(env.model.a2 - A2_NOMINAL) > 1e-9,
+            "tank1": abs(model.a1 - A1_NOMINAL) > 1e-9,
+            "tank2": abs(model.a2 - A2_NOMINAL) > 1e-9,
         }
 
         pid1.setpoint = active_setpoints["tank1"]
         pid2.setpoint = active_setpoints["tank2"]
-        h1, h2 = float(obs[0]), float(obs[1])
+        h1, h2 = float(x[0]), float(x[1])
         v1 = float(pid1.update(measurement=h1, current_time=t))
         v2 = float(pid2.update(measurement=h2, current_time=t))
 
-        obs, _, done, _, _ = env.step(np.array([v1, v2]))
-        h1n, h2n, h3n, h4n = (float(x) for x in obs[:4])
+        dxdt = np.array(model(x, np.array([v1, v2])), dtype=float)
+        x = np.maximum(x + dxdt * scenario.dt, 0.0)
+        h1n, h2n, h3n, h4n = float(x[0]), float(x[1]), float(x[2]), float(x[3])
 
         error1 = active_setpoints["tank1"] - h1n
         error2 = active_setpoints["tank2"] - h2n
@@ -216,16 +233,13 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
             active_setpoints = new_setpoints
             last_anomaly_flags = new_flags
 
-        if done:
-            break
-
     violation_count = sum(1 for f in failure_points if f["type"] == "safety_violation")
     missed_anomaly_count = sum(1 for f in failure_points if f["type"] == "missed_anomaly")
     false_positive_count = sum(1 for f in failure_points if f["type"] == "false_positive")
     exception_count = sum(1 for f in failure_points if f["type"] in ("exception", "timeout"))
 
-    fault1_active_at_end = abs(env.model.a1 - A1_NOMINAL) > 1e-9
-    fault2_active_at_end = abs(env.model.a2 - A2_NOMINAL) > 1e-9
+    fault1_active_at_end = abs(model.a1 - A1_NOMINAL) > 1e-9
+    fault2_active_at_end = abs(model.a2 - A2_NOMINAL) > 1e-9
     restore_gap = 0.0
     if not fault1_active_at_end:
         restore_gap += abs(active_setpoints["tank1"] - scenario.nominal_setpoint1)
