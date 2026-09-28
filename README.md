@@ -132,6 +132,37 @@ python test_supervisor_security.py
 Requires a `.env` file with `DEEPSEEK_API_KEY` set (only needed for the
 trainer scripts — the live sim and benchmarks make no network calls).
 
+## PC-Gym four-tank benchmark
+
+[pcgym_four_tank.py](pcgym_four_tank.py) runs our two-tank supervisor
+interface against PC-Gym's built-in `four_tank` model (Johansson's classic
+quadruple-tank process) instead of our own plant — a richer, better-known MIMO
+benchmark with real cross-coupling (each pump feeds its own tank directly and
+the *other* loop's tank indirectly, through a delayed path), closer to a
+multivariable circuit like a ball mill than our direct two-tank cascade.
+
+Setup: `pip install --user pcgym` (installing without `--user` fails on this
+machine with a permissions error against the system Python's `Scripts`
+folder). On Windows, `integration_method: 'jax'` must be passed explicitly —
+the default `casadi` integrator fails to load its native CVODES plugin DLL.
+See the module docstring for the other empirically-found gotchas (pump output
+floor, feasible setpoint range, dt/settling-time scale).
+
+```bash
+python pcgym_four_tank.py
+```
+
+Our two-tank supervisor's interface (`supervise(telemetry_window,
+active_setpoints, nominal_targets)`) maps directly onto this plant
+(tank1↔h1/v1, tank2↔h2/v2), so `generated_supervisors_two_tank/current_supervisor.py`
+runs here unmodified — but transplanting it with zero retraining performs
+*worse* than a plain PID-only baseline (IAE 163 vs 95, plus 349 false
+positives), because its thresholds were calibrated for `two_tank_sim.py`'s
+units and scale, not this plant's. Confirms the same lesson from the
+context-report findings, now at the plant-transfer level rather than just
+across scenario parameters. Training a fresh supervisor against this plant
+specifically is the natural next step, not yet done.
+
 ## Status / open threads
 
 - Single-tank supervisor has gone through ~60 generations; current champion
