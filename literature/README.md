@@ -110,3 +110,44 @@ our two-tank cascade is a toy version of. Useful for grounding claims about
 why PID-only control is insufficient in the real process, and what
 "multivariable predictive control" was already doing before either MPC or
 LLM-guided heuristics entered the picture.
+
+## Benchmarks for the RL/TD-MPC comparison
+
+Where to actually run a head-to-head once the toy testbeds are outgrown.
+Both of these are runnable now (a MATLAB/Simulink license is available for
+TEP).
+
+**PC-Gym** — Bloor, M., Torraca, J., Sandoval, I.O., Ahmed, A., White, M.,
+Mercangöz, M., Tsay, C., Del Rio Chanona, E.A., Mowbray, M. "PC-Gym:
+Benchmark Environments For Process Control Problems." arXiv:2410.22093, 2024.
+https://arxiv.org/abs/2410.22093
+(code: https://github.com/MaximilianB2/pc-gym, PyPI: `pcgym`)
+
+Best first stop: an open-source, pure-Python Gymnasium-style benchmark suite
+built specifically for comparing RL controllers against Nonlinear MPC on
+process-control problems (CSTRs, multistage extraction, crystallization
+reactors), with nonlinear dynamics, disturbances, and constraints already
+built in, and an NMPC oracle baseline included out of the box. No MATLAB
+dependency, `pip install pcgym` and go. The most direct route to a real
+RL-vs-(N)MPC-vs-our-supervisor comparison without building the harness
+ourselves.
+
+**Tennessee Eastman Process (TEP)** — original process: Downs, J.J., Vogel,
+E.F. "A plant-wide industrial process control problem." *Computers &
+Chemical Engineering*, vol. 17, 1993, pp. 245–255. Python interface: Reinartz,
+C., Enevoldsen, T.T. "pyTEP: A Python package for interactive simulations of
+the Tennessee Eastman process." *SoftwareX*, vol. 18, 2022, art. 101053.
+https://www.sciencedirect.com/science/article/pii/S2352711022000449
+(code: https://github.com/ccreinartz11/pytep — requires the MATLAB engine
+for Python, i.e. a licensed MATLAB/Simulink install)
+
+The historical gold-standard benchmark for fault detection/diagnosis and
+plant-wide control in a large, coupled, multivariable chemical process (12
+manipulated valves, 41 measurements, two simultaneous gas-liquid exothermic
+reactions) — decades of published PID/MPC/RL/fault-detection results exist to
+compare against. Thematically the closest match to what our supervisor is
+actually doing (anomaly detection + multivariable setpoint coordination),
+just at a much larger, industrially-realistic scale than the two-tank
+cascade. `pyTEP` wraps the original Fortran/Simulink simulator so the
+underlying process dynamics match the literature exactly, at the cost of
+needing MATLAB/Simulink installed to run it.
