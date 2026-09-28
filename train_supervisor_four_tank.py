@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 
 from supervisor_security import check_source, safe_exec_supervisor
 from two_tank_sim import MIMO_REQUIRED_ARGS
-from pcgym_four_tank import FourTankScenarioConfig, run_episode, build_log_report
+from pcgym_four_tank import FourTankScenarioConfig, run_episode, build_log_report, pid_only_supervisor
 
 load_dotenv()
 
@@ -164,8 +164,53 @@ def append_context_report(trial_idx, relations):
         f.write(json.dumps({"trial": trial_idx, "relations": relations}) + "\n")
 
 
-def build_prompt(current_code, best_score, traces, failure_catalog, context_relations, best_val_score=None):
+def _compute_reference_stats():
+    """Runs the plain PID-only controller (no supervisor) on baseline_no_fault
+    and returns real measured effort/error statistics for a genuinely healthy
+    episode. Used to give the LLM hard numbers instead of qualitative
+    "this plant oscillates" language - the actual healthy envelope turned out
+    to be much wider than that phrasing implies (errors up to +/-0.19 on
+    targets of only 0.30/0.35, pump effort routinely saturating near 12V),
+    which is almost certainly why early candidates kept false-triggering.
+    """
+    import numpy as np
+    scenario = FourTankScenarioConfig(name="baseline_no_fault")
+    result = run_episode(pid_only_supervisor, scenario)
+    v1 = np.array(result["v1_hist"])[5:]
+    v2 = np.array(result["v2_hist"])[5:]
+    h1 = np.array(result["h1_hist"])[5:]
+    h2 = np.array(result["h2_hist"])[5:]
+    err1 = scenario.nominal_setpoint1 - h1
+    err2 = scenario.nominal_setpoint2 - h2
+    return {
+        "v1": {"mean": float(v1.mean()), "std": float(v1.std()), "min": float(v1.min()), "max": float(v1.max())},
+        "v2": {"mean": float(v2.mean()), "std": float(v2.std()), "min": float(v2.min()), "max": float(v2.max())},
+        "error1": {"mean_abs": float(np.abs(err1).mean()), "min": float(err1.min()), "max": float(err1.max())},
+        "error2": {"mean_abs": float(np.abs(err2).mean()), "min": float(err2.min()), "max": float(err2.max())},
+    }
+
+
+def build_prompt(current_code, best_score, traces, failure_catalog, context_relations, best_val_score=None, reference_stats=None):
     scenario_names = ", ".join(s.name for s in SCENARIO_BATTERY)
+    ref_block = ""
+    if reference_stats is not None:
+        r = reference_stats
+        ref_block = f"""
+MEASURED REFERENCE STATISTICS (from an actual healthy, fault-free episode with
+plain PID control, no supervisor action at all - these are hard numbers, not
+estimates):
+- Pump 1 (v1) effort: mean={r['v1']['mean']:.2f}V, std={r['v1']['std']:.2f}, range [{r['v1']['min']:.2f}, {r['v1']['max']:.2f}]V
+- Pump 2 (v2) effort: mean={r['v2']['mean']:.2f}V, std={r['v2']['std']:.2f}, range [{r['v2']['min']:.2f}, {r['v2']['max']:.2f}]V
+- Tank1 error: mean|error|={r['error1']['mean_abs']:.4f}, range [{r['error1']['min']:.4f}, {r['error1']['max']:.4f}] (on a target of ~0.30)
+- Tank2 error: mean|error|={r['error2']['mean_abs']:.4f}, range [{r['error2']['min']:.4f}, {r['error2']['max']:.4f}] (on a target of ~0.35)
+
+This means: pump effort ROUTINELY SATURATES NEAR THE 1-12V RAIL and tracking
+error swings as large as +/-0.19 (roughly 25-60% of the setpoint) EVEN WHEN
+NOTHING IS WRONG. If your detection threshold would flag anything within
+these ranges, it WILL false-positive constantly. Your threshold must sit
+clearly outside this measured healthy envelope, not just "a bit above average".
+"""
+
     return f"""
 You are improving a deterministic supervisory control function for a
 quadruple-tank (four-tank) water system - the classic Johansson benchmark.
@@ -182,6 +227,17 @@ delayed cross-path rather than direct - so BOTH tanks show real, sustained
 effort/error oscillation even with NO fault present at all, just from
 control-loop interaction. Do not treat all oscillation as anomalous; a
 healthy tank here still varies over time.
+{ref_block}
+PRIMARY OBJECTIVE - READ THIS BEFORE ANYTHING ELSE: every candidate proposed so
+far has failed by triggering false anomaly flags on baseline_no_fault far more
+than it ever correctly caught a real fault (400-900+ false-flag events out of
+~600 possible steps, versus at most a few hundred missed-fault events even in
+the worst fault scenario). At the current scoring weights, a supervisor that
+NEVER flags anything at all scores BETTER than every candidate tried so far.
+Staying silent is the safe default; only flag an anomaly when you have strong,
+specific evidence clearly outside the measured healthy envelope above. Getting
+baseline_no_fault to (near) zero false positives is more valuable right now
+than improving fault detection - do not sacrifice the former for the latter.
 
 IMPORTANT UNITS/SCALE (this plant is NOT the same as any other tank system
 you may have seen): pump effort (v1, v2) ranges roughly 1-12 (volts), tank
@@ -229,14 +285,18 @@ Aggregate failure-point catalog from past runs (counts and worst examples, keyed
 {json.dumps(failure_catalog, indent=2)}
 
 Lessons learned from previous trials - cause-effect relationships already discovered
-by earlier attempts (durable observations, not tied to any one candidate's code;
-do not repeat a change that a relation below says already failed for a known reason):
+by earlier attempts (durable observations, not tied to any one candidate's code).
+REQUIRED: your code must not repeat a change that a relation below already says
+failed for a specific reason. If a relation identifies a specific bug pattern
+(e.g. "comparing a window against its own contaminated baseline"), your code must
+not contain that pattern - this is a hard constraint, not a suggestion:
 {json.dumps(context_relations, indent=2) if context_relations else "(none recorded yet - this is an early trial)"}
 
 Task:
 1. Diagnose what is causing the worst-scoring scenarios and/or the most common failure-point categories, keeping the non-minimum-phase cross-coupling and this plant's own scale in mind.
 2. Propose an improved `supervise` function that reduces missed anomalies and false positives on both tanks without introducing new safety violations, and that restores both setpoints back toward nominal once their respective faults have genuinely cleared.
-3. Separately, identify any NEW generalizable cause-effect relationship this trial's result reveals, whether or not this candidate gets promoted. Only include a relation if it is genuinely new - do not repeat one already listed above.
+3. Before finalizing, trace through what your code would do on baseline_no_fault using the measured reference statistics above: for each of tank1 and tank2, confirm that typical healthy effort/error values (including the extremes in the measured ranges) do NOT cross your anomaly condition. State this reasoning explicitly in "self_check" below - not just "it should work", but the actual numbers compared against your actual threshold.
+4. Separately, identify any NEW generalizable cause-effect relationship this trial's result reveals, whether or not this candidate gets promoted. Only include a relation if it is genuinely new - do not repeat one already listed above.
 
 You must output strictly JSON matching this structure:
 {{
@@ -246,6 +306,7 @@ You must output strictly JSON matching this structure:
     "change_type": "structural | scalar/config | bug_fix",
     "next_recommendation": "string"
   }},
+  "self_check": "string: your threshold(s) vs. the measured healthy ranges above, numerically, for both tanks",
   "proposed_change": "string",
   "code": "full source of the new supervise function as a string",
   "relations_learned": ["short generalizable cause-effect statement", ...]
@@ -292,7 +353,7 @@ def save_candidate_only(candidate_code, trial_idx):
         f.write(candidate_code)
 
 
-def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, reason=None, validation_score=None):
+def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, reason=None, validation_score=None, self_check=None):
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(TRIALS_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps({
@@ -301,6 +362,7 @@ def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, rea
             "score": score,
             "validation_score": validation_score,
             "failure_analysis": failure_analysis,
+            "self_check": self_check,
             "proposed_change": proposed_change,
             "reason": reason,
         }) + "\n")
@@ -451,12 +513,18 @@ def main():
     append_failure_points(best_traces, "trainer_baseline")
     print(f"[BASELINE] current_supervisor.py avg score: {best_score:.3f} (held-out: {best_val_score:.3f})")
 
+    reference_stats = _compute_reference_stats()
+    print(f"[REFERENCE] healthy v1={reference_stats['v1']['mean']:.2f}V (std {reference_stats['v1']['std']:.2f}), "
+          f"v2={reference_stats['v2']['mean']:.2f}V (std {reference_stats['v2']['std']:.2f}), "
+          f"|err1| up to {reference_stats['error1']['max']:.3f}, |err2| up to {reference_stats['error2']['max']:.3f}")
+
     for i in range(num_trials):
         trial_idx = start_trial + i
         print(f"\n=== Trial {i + 1}/{num_trials} (gen_{trial_idx}) ===")
         failure_catalog = load_failure_catalog()
         context_relations = load_context_report()
-        prompt = build_prompt(current_code, best_score, best_traces, failure_catalog, context_relations, best_val_score=best_val_score)
+        prompt = build_prompt(current_code, best_score, best_traces, failure_catalog, context_relations,
+                               best_val_score=best_val_score, reference_stats=reference_stats)
         response = call_deepseek(prompt)
 
         if response is None:
@@ -466,6 +534,9 @@ def main():
         candidate_code = response.get("code", "")
         failure_analysis = response.get("failure_analysis")
         proposed_change = response.get("proposed_change")
+        self_check = response.get("self_check")
+        if self_check:
+            print(f"[SELF-CHECK] {self_check}")
         new_relations = response.get("relations_learned") or []
         if new_relations:
             print(f"[LEARNED] {new_relations}")
@@ -474,13 +545,13 @@ def main():
         ok, reason = check_source(candidate_code, required_args=MIMO_REQUIRED_ARGS)
         if not ok:
             print(f"[REJECTED - SECURITY] {reason}")
-            log_trial(trial_idx, "REJECTED_SECURITY", None, failure_analysis, proposed_change, reason=reason)
+            log_trial(trial_idx, "REJECTED_SECURITY", None, failure_analysis, proposed_change, reason=reason, self_check=self_check)
             continue
 
         candidate_fn, err = safe_exec_supervisor(candidate_code)
         if err:
             print(f"[REJECTED - LOAD] {err}")
-            log_trial(trial_idx, "REJECTED_LOAD", None, failure_analysis, proposed_change, reason=err)
+            log_trial(trial_idx, "REJECTED_LOAD", None, failure_analysis, proposed_change, reason=err, self_check=self_check)
             continue
 
         cand_score, cand_traces = score_supervisor(candidate_fn)
@@ -494,16 +565,16 @@ def main():
                 print(f"[REJECTED - REGRESSION] '{scen_name}' regressed {old_s:.1f} -> {new_s:.1f} despite a better aggregate score")
                 save_candidate_only(candidate_code, trial_idx)
                 log_trial(trial_idx, "REJECTED_REGRESSION", cand_score, failure_analysis, proposed_change,
-                          reason=f"{scen_name} regressed {old_s:.1f} -> {new_s:.1f}")
+                          reason=f"{scen_name} regressed {old_s:.1f} -> {new_s:.1f}", self_check=self_check)
                 continue
             promote(candidate_code, trial_idx)
             best_score, current_code, best_traces = cand_score, candidate_code, cand_traces
             best_val_score, _ = validate_supervisor(candidate_fn)
             print(f"[VALIDATION] held-out score: {best_val_score:.3f} (dev score: {cand_score:.3f})")
-            log_trial(trial_idx, "PROMOTED", cand_score, failure_analysis, proposed_change, validation_score=best_val_score)
+            log_trial(trial_idx, "PROMOTED", cand_score, failure_analysis, proposed_change, validation_score=best_val_score, self_check=self_check)
         else:
             save_candidate_only(candidate_code, trial_idx)
-            log_trial(trial_idx, "ROLLBACK", cand_score, failure_analysis, proposed_change)
+            log_trial(trial_idx, "ROLLBACK", cand_score, failure_analysis, proposed_change, self_check=self_check)
 
     print(f"\n[DONE] Final best score: {best_score:.3f}. current_supervisor.py reflects the best candidate found.")
     generate_report()
