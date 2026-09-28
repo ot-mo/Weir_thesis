@@ -51,7 +51,12 @@ FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, "final_report_four_tank.md")
 VIOLATION_PENALTY = 500
 MISSED_ANOMALY_PENALTY = 300
 FALSE_POSITIVE_PENALTY = 160
-NO_FAULT_FALSE_POSITIVE_PENALTY = 800
+NO_FAULT_FALSE_POSITIVE_PENALTY = 250  # lowered from 800: this plant's real background
+# oscillation was pushing every candidate's false-positive rate on baseline_no_fault to
+# 400-900+ events, and at 800/event the resulting scores (150k-700k) swamped the search's
+# ability to distinguish "somewhat better" candidates from "much worse" ones. Still kept
+# above FALSE_POSITIVE_PENALTY (160) to preserve the "no excuse to ever trigger here"
+# asymmetry, just not so extreme it collapses the search's signal.
 EXCEPTION_PENALTY = 10000
 RESTORE_GAP_PENALTY = 200
 
