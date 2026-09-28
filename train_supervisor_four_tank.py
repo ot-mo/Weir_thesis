@@ -231,10 +231,10 @@ healthy tank here still varies over time.
 PRIMARY OBJECTIVE - READ THIS BEFORE ANYTHING ELSE: every candidate proposed so
 far has failed by triggering false anomaly flags on baseline_no_fault far more
 than it ever correctly caught a real fault (400-900+ false-flag events out of
-~600 possible steps, versus at most a few hundred missed-fault events even in
-the worst fault scenario). At the current scoring weights, a supervisor that
+~600 possible steps, versu At the current scoring weights, a supervisor that
 NEVER flags anything at all scores BETTER than every candidate tried so far.
-Staying silent is the safe default; only flag an anomaly when you have strong,
+Staying silent is the safes at most a few hundred missed-fault events even in
+the worst fault scenario). default; only flag an anomaly when you have strong,
 specific evidence clearly outside the measured healthy envelope above. Getting
 baseline_no_fault to (near) zero false positives is more valuable right now
 than improving fault detection - do not sacrifice the former for the latter.
@@ -260,6 +260,19 @@ def supervise(telemetry_window, active_setpoints, nominal_targets):
 telemetry_window is a list of dicts shaped like:
 {{"time": float, "tank1": {{"level": float, "pump_effort": float, "error": float}}, "tank2": {{...same keys...}}}}
 active_setpoints and nominal_targets are dicts with keys "tank1" (h1, actuated by v1) and "tank2" (h2, actuated by v2).
+
+CRITICAL, EXACT FACT ABOUT THE WINDOW SIZE: len(telemetry_window) is ALWAYS
+exactly 30 (one sample per second, 30 seconds of history) - never 40, 50, 80,
+or 100. Do not design any "minimum sample count" gate, "long block" vs "short
+block" comparison, or noise-averaging assumption around a block size larger
+than 30; a condition like `if n >= 80` or `len(window) >= 40` can NEVER be
+satisfied and makes your entire detector permanently unreachable dead code -
+this exact mistake has caused every candidate so far to silently never fire at
+all, in either direction (no false positives, but also no real detections).
+If you want more averaging than 30 samples can provide, you cannot get it: the
+function is stateless (no memory between calls) and only ever sees the most
+recent 30 seconds, so your noise/threshold reasoning must be calibrated
+against n=30, not against a larger block you wish you had.
 
 Rules for the code you write:
 - No imports, no exec/eval, no file/network/os access, no access to dunder attributes.
