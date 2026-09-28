@@ -97,6 +97,22 @@ def pid_only_supervisor(telemetry_window, active_setpoints, nominal_targets):
     }
 
 
+def build_log_report(episode_result: dict) -> dict:
+    return {
+        "scenario": episode_result["scenario"],
+        "metrics": episode_result["metrics"],
+        "failure_point_counts": _count_failure_points(episode_result["failure_points"]),
+    }
+
+
+def _count_failure_points(failure_points: list) -> dict:
+    counts = {}
+    for fp in failure_points:
+        key = f"{fp['tank']}:{fp['type']}"
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> dict:
     env, nsteps = _build_env(scenario)
     obs, _ = env.reset()
@@ -208,6 +224,14 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
     false_positive_count = sum(1 for f in failure_points if f["type"] == "false_positive")
     exception_count = sum(1 for f in failure_points if f["type"] in ("exception", "timeout"))
 
+    fault1_active_at_end = abs(env.model.a1 - A1_NOMINAL) > 1e-9
+    fault2_active_at_end = abs(env.model.a2 - A2_NOMINAL) > 1e-9
+    restore_gap = 0.0
+    if not fault1_active_at_end:
+        restore_gap += abs(active_setpoints["tank1"] - scenario.nominal_setpoint1)
+    if not fault2_active_at_end:
+        restore_gap += abs(active_setpoints["tank2"] - scenario.nominal_setpoint2)
+
     return {
         "scenario": scenario.name,
         "time_hist": time_hist, "h1_hist": h1_hist, "h2_hist": h2_hist,
@@ -220,6 +244,7 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
             "missed_anomaly_count": missed_anomaly_count,
             "false_positive_count": false_positive_count,
             "exception_count": exception_count,
+            "restore_gap": round(restore_gap, 4),
         },
     }
 
