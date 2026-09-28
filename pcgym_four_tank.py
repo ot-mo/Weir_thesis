@@ -63,7 +63,7 @@ class FourTankScenarioConfig:
     pid_ki: float = 0.4
     pid_kd: float = 2.0
     pump_output_limits: tuple = (1.0, 12.0)
-    macro_cycle_steps: int = 30  # 30s per supervisor decision
+    macro_cycle_steps: int = 50  # 50s per supervisor decision, and len(telemetry_window)
     setpoint_clamp: tuple = (0.05, 0.48)
     supervisor_timeout_s: float = 0.5
 

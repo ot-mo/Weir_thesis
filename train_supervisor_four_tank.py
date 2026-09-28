@@ -228,16 +228,19 @@ effort/error oscillation even with NO fault present at all, just from
 control-loop interaction. Do not treat all oscillation as anomalous; a
 healthy tank here still varies over time.
 {ref_block}
-PRIMARY OBJECTIVE - READ THIS BEFORE ANYTHING ELSE: every candidate proposed so
-far has failed by triggering false anomaly flags on baseline_no_fault far more
-than it ever correctly caught a real fault (400-900+ false-flag events out of
-~600 possible steps, versu At the current scoring weights, a supervisor that
-NEVER flags anything at all scores BETTER than every candidate tried so far.
-Staying silent is the safes at most a few hundred missed-fault events even in
-the worst fault scenario). default; only flag an anomaly when you have strong,
-specific evidence clearly outside the measured healthy envelope above. Getting
-baseline_no_fault to (near) zero false positives is more valuable right now
-than improving fault detection - do not sacrifice the former for the latter.
+PRIMARY OBJECTIVE - READ THIS BEFORE ANYTHING ELSE: earlier candidates failed
+by triggering false anomaly flags on baseline_no_fault far more than they ever
+correctly caught a real fault (400-900+ false-flag events out of ~600 possible
+steps, versus at most a few hundred missed-fault events even in the worst
+fault scenario). The most recent batch overcorrected the other way: it
+consistently assumed a telemetry_window size (40-100 samples) larger than the
+real one, which silently made detection logic unreachable dead code, so every
+candidate scored identically to never flagging anything at all. Both failure
+modes are worse than staying silent; only flag an anomaly when you have
+strong, specific evidence clearly outside the measured healthy envelope above,
+using the correct window size stated below. Getting baseline_no_fault to
+(near) zero false positives while still catching real faults is the goal -
+do not sacrifice either one for the other.
 
 IMPORTANT UNITS/SCALE (this plant is NOT the same as any other tank system
 you may have seen): pump effort (v1, v2) ranges roughly 1-12 (volts), tank
@@ -262,17 +265,21 @@ telemetry_window is a list of dicts shaped like:
 active_setpoints and nominal_targets are dicts with keys "tank1" (h1, actuated by v1) and "tank2" (h2, actuated by v2).
 
 CRITICAL, EXACT FACT ABOUT THE WINDOW SIZE: len(telemetry_window) is ALWAYS
-exactly 30 (one sample per second, 30 seconds of history) - never 40, 50, 80,
-or 100. Do not design any "minimum sample count" gate, "long block" vs "short
-block" comparison, or noise-averaging assumption around a block size larger
-than 30; a condition like `if n >= 80` or `len(window) >= 40` can NEVER be
-satisfied and makes your entire detector permanently unreachable dead code -
-this exact mistake has caused every candidate so far to silently never fire at
-all, in either direction (no false positives, but also no real detections).
-If you want more averaging than 30 samples can provide, you cannot get it: the
-function is stateless (no memory between calls) and only ever sees the most
-recent 30 seconds, so your noise/threshold reasoning must be calibrated
-against n=30, not against a larger block you wish you had.
+exactly 50 (one sample per second, 50 seconds of history) - never 30, 40, 80,
+or 100. This was previously 30 and has just been increased to 50 specifically
+to give you more samples to average over; do not assume any other value. Do
+not design any "minimum sample count" gate, "long block" vs "short block"
+comparison, or noise-averaging assumption around a block size larger than 50;
+a condition like `if n >= 80` or `len(window) >= 60` can NEVER be satisfied
+and makes your entire detector permanently unreachable dead code - this exact
+mistake (assuming a window of 40-100 when it was actually 30) caused every
+candidate in the previous batch to silently never fire at all, in either
+direction (no false positives, but also no real detections) - do not repeat
+it with the new number. If you want more averaging than 50 samples can
+provide, you cannot get it: the function is stateless (no memory between
+calls) and only ever sees the most recent 50 seconds, so your noise/threshold
+reasoning must be calibrated against n=50, not against a larger block you
+wish you had.
 
 Rules for the code you write:
 - No imports, no exec/eval, no file/network/os access, no access to dunder attributes.
