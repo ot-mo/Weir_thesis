@@ -10,17 +10,19 @@ direct cascade.
 
 Reuses our existing two-tank MIMO supervisor interface unchanged:
     supervise(telemetry_window, active_setpoints, nominal_targets)
-by mapping tank1 <-> (h1, v1) and tank2 <-> (h2, v2). Our already-trained
-generated_supervisors_two_tank/current_supervisor.py can run against this
-plant with zero code changes.
+where "tank1"/"tank2" are the h1/h2 level loops. Each telemetry entry's
+pump_effort is the output of the loop regulating that tank - under the
+default cross pairing that is pump 2 for tank1 and pump 1 for tank2.
 
 Setup notes (found empirically - see conversation, not in the PC-Gym docs):
 - dt=1.0s; the plant's natural settling time is ~100-300s, an order of
   magnitude slower than our own tank_sim.py.
 - Default gamma_1=gamma_2=0.2 puts this in the "non-minimum-phase" regime
   (gamma_1+gamma_2 < 1): most pump flow is routed through the cross-coupling
-  path, which is deliberately harder for decentralized PID and is why the
-  PID-only baseline below is slow/oscillatory rather than badly tuned.
+  path, so each level is mainly driven by the OTHER pump through the upper
+  tank. The level loops are therefore paired off-diagonally (see
+  FourTankScenarioConfig.pid_pairing); pairing them diagonally made the loops
+  fight each other during faults.
 - Max achievable steady state at full 12V on both pumps is h1~=0.50,
   h2~=0.61 - setpoints must stay comfortably below that.
 
@@ -82,9 +84,19 @@ class FourTankScenarioConfig:
     leak2_offset_s: Optional[float] = None
     initial_levels: tuple = (0.2, 0.2, 0.2, 0.2)
     safety_bounds: tuple = (0.02, 1.5)
-    pid_kp: float = 15.0
-    pid_ki: float = 0.4
-    pid_kd: float = 2.0
+    # "cross": the tank1 loop drives pump 2 and the tank2 loop drives pump 1.
+    # With gamma_1 = gamma_2 = 0.2 the relative gain for the diagonal pairing is
+    # gamma1*gamma2/(gamma1+gamma2-1) = -0.07, so Johansson (2000) pairs
+    # off-diagonally. Under the old "diagonal" pairing a tank1 leak made loop 1
+    # saturate pump 1, which overfed tank2 via tank4, so loop 2 cut pump 2 and
+    # drained tank3 - tank1's main feed - leaving 171 unavoidable safety
+    # violations in tank1_severe_persistent that no setpoint policy could fix.
+    pid_pairing: str = "cross"
+    # PI retuned for the cross pairing (grid search: best 600s IAE among tunings
+    # that converge; the old 15/0.4/2.0 limit-cycles at +/-0.05 on this pairing).
+    pid_kp: float = 40.0
+    pid_ki: float = 0.3
+    pid_kd: float = 0.0
     pump_output_limits: tuple = (1.0, 12.0)
     # Decision cadence and window length are deliberately separate: flags can
     # only change at a decision, so a 50s cadence alone forced >=51 missed and
@@ -147,6 +159,7 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
     active_setpoints = {"tank1": scenario.nominal_setpoint1, "tank2": scenario.nominal_setpoint2}
     time_hist, h1_hist, h2_hist, h3_hist, h4_hist = [], [], [], [], []
     v1_hist, v2_hist = [], []
+    effort1_hist, effort2_hist = [], []
     telemetry_buffer = []
     supervisor_decisions = []
     failure_points = []
@@ -171,11 +184,17 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
             "tank2": abs(model.a2 - A2_NOMINAL) > 1e-9,
         }
 
+        # pid1/pid2 are the tank1/tank2 level loops; which pump each one
+        # drives depends on the pairing.
         pid1.setpoint = active_setpoints["tank1"]
         pid2.setpoint = active_setpoints["tank2"]
         h1, h2 = float(x[0]), float(x[1])
-        v1 = float(pid1.update(measurement=h1, current_time=t))
-        v2 = float(pid2.update(measurement=h2, current_time=t))
+        effort1 = float(pid1.update(measurement=h1, current_time=t))
+        effort2 = float(pid2.update(measurement=h2, current_time=t))
+        if scenario.pid_pairing == "cross":
+            v1, v2 = effort2, effort1
+        else:
+            v1, v2 = effort1, effort2
 
         dxdt = np.array(model(x, np.array([v1, v2])), dtype=float)
         x = np.maximum(x + dxdt * scenario.dt, 0.0)
@@ -187,11 +206,14 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
 
         time_hist.append(t); h1_hist.append(h1n); h2_hist.append(h2n)
         h3_hist.append(h3n); h4_hist.append(h4n); v1_hist.append(v1); v2_hist.append(v2)
+        effort1_hist.append(effort1); effort2_hist.append(effort2)
 
+        # Telemetry is per level loop: tankN's pump_effort is the output of the
+        # loop regulating tankN (pump 2 for tank1 under the cross pairing).
         telemetry_buffer.append({
             "time": t,
-            "tank1": {"level": round(h1n, 4), "pump_effort": round(v1, 3), "error": round(error1, 4)},
-            "tank2": {"level": round(h2n, 4), "pump_effort": round(v2, 3), "error": round(error2, 4)},
+            "tank1": {"level": round(h1n, 4), "pump_effort": round(effort1, 3), "error": round(error1, 4)},
+            "tank2": {"level": round(h2n, 4), "pump_effort": round(effort2, 3), "error": round(error2, 4)},
         })
 
         for tank_name, level in (("tank1", h1n), ("tank2", h2n)):
@@ -260,6 +282,7 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
         "scenario": scenario.name,
         "time_hist": time_hist, "h1_hist": h1_hist, "h2_hist": h2_hist,
         "h3_hist": h3_hist, "h4_hist": h4_hist, "v1_hist": v1_hist, "v2_hist": v2_hist,
+        "effort1_hist": effort1_hist, "effort2_hist": effort2_hist,
         "supervisor_decisions": supervisor_decisions,
         "failure_points": failure_points,
         "metrics": {
