@@ -8,4 +8,5 @@
 - Run the live sim (opens a plot window): `python LeakyTanke.py`
 - Run the live sim headlessly / from an agent, without blocking on the plot window: `MPLBACKEND=Agg python LeakyTanke.py`
 - Run the offline Layer-3 trainer (makes real, billed DeepSeek API calls — confirm with the user first): `python train_supervisor.py [num_trials]` (defaults to 10 trials if omitted)
+- Run the four-tank (PC-Gym) trainer (billed DeepSeek calls, 4 per generation plus retries — confirm with the user first): `python train_supervisor_four_tank.py [num_generations]` (defaults to 4). Report only, no API calls: `python train_supervisor_four_tank.py --report`
 - Run the supervisor security/sandbox tests: `python test_supervisor_security.py`

@@ -120,6 +120,8 @@ python LeakyTanke.py
 # Offline trainer (makes real, billed DeepSeek API calls)
 python train_supervisor.py [num_trials]        # single-tank
 python train_supervisor_two_tank.py [num_trials]  # two-tank
+python train_supervisor_four_tank.py [num_generations]  # PC-Gym four-tank, 4 candidates/generation
+python train_supervisor_four_tank.py --report      # four-tank report only, no API calls
 
 # Compare the current trained supervisor against a PID-only baseline
 python benchmark_baselines.py     # single-tank
@@ -143,25 +145,49 @@ multivariable circuit like a ball mill than our direct two-tank cascade.
 
 Setup: `pip install --user pcgym` (installing without `--user` fails on this
 machine with a permissions error against the system Python's `Scripts`
-folder). On Windows, `integration_method: 'jax'` must be passed explicitly —
-the default `casadi` integrator fails to load its native CVODES plugin DLL.
-See the module docstring for the other empirically-found gotchas (pump output
-floor, feasible setpoint range, dt/settling-time scale).
+folder). The plant is PC-Gym's `four_tank` model class integrated directly
+with explicit Euler — `pcgym.make_env` is bypassed because fault injection
+silently had no effect through its wrapper (see the module docstring).
 
 ```bash
 python pcgym_four_tank.py
 ```
 
-Our two-tank supervisor's interface (`supervise(telemetry_window,
-active_setpoints, nominal_targets)`) maps directly onto this plant
-(tank1↔h1/v1, tank2↔h2/v2), so `generated_supervisors_two_tank/current_supervisor.py`
-runs here unmodified — but transplanting it with zero retraining performs
-*worse* than a plain PID-only baseline (IAE 163 vs 95, plus 349 false
-positives), because its thresholds were calibrated for `two_tank_sim.py`'s
-units and scale, not this plant's. Confirms the same lesson from the
-context-report findings, now at the plant-transfer level rather than just
-across scenario parameters. Training a fresh supervisor against this plant
-specifically is the natural next step, not yet done.
+The supervisor keeps the same interface (`supervise(telemetry_window,
+active_setpoints, nominal_targets)`), where `tank1`/`tank2` are the h1/h2
+level loops and each tank's `pump_effort` is the output of the loop
+regulating it.
+
+**Testbed corrections (2026-09-29).** A plateau at 36,300 after ~20 trials
+turned out to be caused by the testbed, not the LLM — the champion was within
+~7% of the best score any supervisor could reach there:
+
+- *Decision cadence:* decisions every 50 s forced ≥51 missed + ≥51 false-positive
+  steps per fault event. The supervisor now decides every 10 s on overlapping
+  50-sample windows, with window-relative time; fault onsets sit off the
+  decision grid in both dev and validation.
+- *Loop pairing:* with γ₁ = γ₂ = 0.2 the diagonal relative gain is −0.07, so
+  Johansson (2000) pairs v1↔h2, v2↔h1. The diagonal pairing starved the
+  leaking tank (tank 1 leak → loop 2 cut pump 2 → tank 3, tank 1's main feed,
+  drained), leaving 171 safety violations no setpoint policy could remove.
+  The loops are now cross-paired and retuned as PI (Kp = 40, Ki = 0.3); PID-only
+  has zero violations on every scenario.
+
+The trainer now samples 4 candidates per generation at temperature 1.0 and
+gives the LLM a plant-engineer-level description of the process plus
+per-decision traces of the champion on its worst scenarios.
+
+| Supervisor (corrected testbed) | Dev | Held-out |
+|---|---|---|
+| PID-only / gen_0 seed | 64,865 | 69,569 |
+| Old champion, transplanted without retraining | 10,777 | 14,941 |
+| gen_1 (1 generation) | 6,127 | 7,100 |
+| gen_2 (2 generations) | 4,627 | 3,600 |
+| Perfect-detection oracle | 2,635 | 2,609 |
+
+The gen_2 champion has zero false positives on the fault-free scenario; most
+of its remaining cost is in `both_leaks`, where one tank's leak partly masks
+the other's through the cross-coupling.
 
 ## Status / open threads
 
