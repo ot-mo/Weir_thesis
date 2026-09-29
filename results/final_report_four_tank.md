@@ -1,6 +1,6 @@
 # Four-Tank MIMO Supervisor Training Report
 
-Generated: 2026-09-28T18:55:38+00:00
+Generated: 2026-09-29T08:10:43+00:00
 
 ## Current champion
 
@@ -11,8 +11,8 @@ Generated: 2026-09-28T18:55:38+00:00
 
 ## Trial history
 
-- Total trials logged: 10
-  - ROLLBACK: 7
+- Total trials logged: 11
+  - ROLLBACK: 8
   - PROMOTED: 3
 
 ## Score trajectory (promoted trials only)
@@ -25,9 +25,6 @@ Generated: 2026-09-28T18:55:38+00:00
 
 ## Known open issues / lessons learned so far
 
-- In this non-minimum-phase regime the pumps oscillate anti-phase (v1 high while v2 low), so a 50-sample block can show a large split excursion while the total-effort excess stays near zero; requiring the split excess to be a fixed multiple of the total excess (ratio band) correctly rejects such healthy control-interaction swings that a standalone dS threshold would false-flag.
-- In this plant the faulted pump is already near its 12 V rail in healthy operation (v1 mean 10.42 V, only ~1.6 V headroom), so any detector whose gate requires the SUM of both pump efforts to rise by a fixed absolute amount (e.g. dT>2.8 V) is physically unreachable for a single-tank leak and reports zero detections regardless of fault severity; the effort signal that actually moves is the anti-phase SHIFT (v1-v2), not the total.
-- Because each controlled tank is driven by its OWN directly-actuated pump (v1->h1, v2->h2), a cross-coupled fault perturbs the healthy tank but its fast local loop re-regulates its level, so the healthy tank's sustained |error| stays near the measured healthy mean while only the saturated/faulted tank sustains large error; therefore per-tank sustained block-mean |error| is a cross-coupling-robust discriminator that effort-only logic cannot provide.
 - A detector whose persistence test uses the full 50-sample window keeps asserting a fault for up to a full window (or half-window) after the fault clears, producing exactly the observed ~50 post-clear false-positive events per fault scenario; shortening the recent decision window to ~20 samples reduces this lag-driven false-positive count without materially hurting detection.
 - A per-tank anomaly bar scaled off the healthy MEAN |error| (e.g. 2x the 0.074 mean = 0.15) sits INSIDE the healthy envelope because the healthy MAX |error| is 0.19, so slow control-loop oscillation peaks false-positive; the bar must instead be placed strictly above the measured healthy MAXIMUM |error| (here 1.05-1.08x 0.19), which makes a fault-free crossing mathematically impossible for any block average and any persistence fraction, guaranteeing zero baseline flags without relying on noise averaging.
 - Because the supervisor's own mitigation for a tank in deficit (lowering its setpoint toward the achievable level) shrinks the very tracking-error signal used as the anomaly evidence, an error-magnitude detector can un-detect an ongoing fault once the setpoint has been driven further below nominal than the detection margin, producing a mitigate -> release -> re-flag chatter whose released steps are counted as missed anomalies; the per-step mitigation amplitude must therefore be bounded well inside the detection margin (here 0.005 V/step against a ~0.015 V margin between the healthy envelope maximum and the detection bar).
@@ -50,3 +47,6 @@ Generated: 2026-09-28T18:55:38+00:00
 - A one-sided magnitude bar is not 'free' even when provably outside the healthy envelope: moving it tighter by d cuts onset latency by d/(fault rate) but lengthens the post-clear release by the same d/(recovery rate), so the score-optimal tightness is fixed by the ratio of the missed-anomaly penalty to the false-positive penalty (here 300 vs 160-250), and with the miss penalty above the FP penalty the best bar is the tightest one that still clears the healthy envelope - latency minimisation alone is the wrong objective.
 - Under a non-minimum-phase pump/valve split, a tank's own-fault error excursion and the cross-coupled disturbance it imposes on its neighbour have OPPOSITE signs (own leak -> level falls -> tight/low edge; neighbour's leak -> extra cross inflow -> level rises -> wide/high edge), so one one-sided bar on the fault-directed edge obtains the onset speed of a tight threshold together with the baseline safety of a wide one - something no symmetric |error| threshold can achieve, since it must pay the wide margin on both sides.
 - For a supervisor whose diagnosis channel IS the tracking error, setpoint trimming is score-neutral to negative on a leak battery: the faulted pump is already pinned at the rail, so trimming the reference buys at most (trim amplitude x fault duration) in IAE - here order 1 point against 1e4-1e5 points of miss/false terms - while it directly shifts the error used as evidence (mitigate -> release -> re-flag chatter) and leaves a non-zero restore_gap if the fault has not cleared by episode end; holding and restoring the nominal reference is therefore strictly safer.
+- A per-sample count rule with threshold K inside a window of W samples has an exactly known lag geometry: onset is K samples after the first out-of-band sample while release is W-K+1 samples after the last one, so W buys immunity to chattering (intermittently crossing) faults at a direct, quantifiable cost in post-clear false-positive tail - the opposite of a block-mean rule whose release latency is set by the whole block length and is independent of K.
+- The two edges of a measured healthy envelope carry very different statistical confidence: the edge the healthy oscillation reaches every cycle is pinned to a small fraction of its amplitude, while the far edge reached only at rare peaks is pinned only to within the episode length; consequently the frequently-exercised edge can carry a much tighter ABSOLUTE bar at identical false-positive risk, which is exactly what makes an asymmetric single-edge detector fast on the fault-directed side but not on the other.
+- Because the miss and false-positive penalties are unequal (here 300 vs 160-250), the cost curve of bar tightness is asymmetric: loosening the bar increases the onset lag linearly and without bound, while tightening it inflates the release lag only until the error must traverse the whole physical fault excursion, so the worst-case downside of an over-tight bar is bounded (roughly FP_PENALTY times excursion/recovery-rate) while its upside is not - when the miss penalty exceeds the false-positive penalty the risk-optimal choice is to sit as tight as the healthy envelope allows.
