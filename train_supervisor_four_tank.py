@@ -1,19 +1,23 @@
 """Layer 3 for the PC-Gym four-tank MIMO testbed: offline DeepSeek-driven
 heuristic learner for the four-tank supervisor.
 
-Run manually: python train_supervisor_four_tank.py [num_trials]
+Run manually: python train_supervisor_four_tank.py [num_generations]
 
 Mirrors train_supervisor_two_tank.py's structure (elitist hill-climb,
 security-check gate, fixed scenario battery, held-out validation, context
-report, generalization-gap prompt) exactly, pointed at pcgym_four_tank.py's
-plant instead. Reuses the identical MIMO signature
-supervise(telemetry_window, active_setpoints, nominal_targets) - the
-two-tank supervisor's current_supervisor.py loads and runs here unmodified,
-though it transplants poorly (see pcgym_four_tank.py's __main__ block and
-the README): its thresholds were calibrated for a completely different
-plant's units/scale and don't zero-shot-transfer, which is exactly why this
-system gets its own from-scratch trainer rather than reusing the two-tank
-champion directly.
+report, generalization-gap prompt), pointed at pcgym_four_tank.py's plant,
+with three additions taken from the program-search literature (Eureka,
+FunSearch, AlphaEvolve, Learning Beyond Gradients):
+- Each generation samples CANDIDATES_PER_GENERATION programs in parallel from
+  the same prompt at a non-zero temperature, and the best eligible one is
+  promoted. At temperature 0 the same prompt returned near-identical code
+  trial after trial.
+- The prompt describes the plant the way a process engineer on this unit
+  would know it (layout, mass balances, parameters, loop pairing, operating
+  point, fault mode), rather than only its measured statistics.
+- The prompt shows a per-decision trace of the champion on its worst
+  scenarios (true fault state vs its flags over time), plus a summary of the
+  previous generation's non-promoted attempts.
 """
 
 import csv
@@ -22,6 +26,7 @@ import json
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from openai import OpenAI
@@ -29,7 +34,10 @@ from dotenv import load_dotenv
 
 from supervisor_security import check_source, safe_exec_supervisor
 from two_tank_sim import MIMO_REQUIRED_ARGS
-from pcgym_four_tank import FourTankScenarioConfig, run_episode, build_log_report, pid_only_supervisor
+from pcgym_four_tank import (
+    FourTankScenarioConfig, run_episode, build_log_report, pid_only_supervisor,
+    plant_parameters, nominal_operating_point,
+)
 
 load_dotenv()
 
@@ -47,6 +55,10 @@ CONTEXT_REPORT_PATH = os.path.join(RESULTS_DIR, "context_report_four_tank.jsonl"
 MAX_CONTEXT_RELATIONS = 25
 SUMMARY_CSV_PATH = os.path.join(RESULTS_DIR, "summary_four_tank.csv")
 FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, "final_report_four_tank.md")
+
+CANDIDATES_PER_GENERATION = 4
+SAMPLING_TEMPERATURE = 1.0
+TRACE_SCENARIOS = 2  # champion's worst-scoring scenarios shown as decision traces
 
 VIOLATION_PENALTY = 500
 MISSED_ANOMALY_PENALTY = 300
@@ -95,6 +107,20 @@ VALIDATION_SCENARIO_BATTERY = [
 ]
 
 
+def _format_decision_trace(result):
+    yn = lambda flags: f"[{'Y' if flags['tank1'] else '-'},{'Y' if flags['tank2'] else '-'}]"
+    lines = []
+    for d in result["supervisor_decisions"]:
+        lines.append(
+            f"t={d['time_s']:.0f}s fault={yn(d['fault_active'])} flag={yn(d['anomaly_flags'])} "
+            f"mean|e|=[{d['mean_abs_error']['tank1']:.3f},{d['mean_abs_error']['tank2']:.3f}] "
+            f"effort=[{d['mean_effort']['tank1']:.1f},{d['mean_effort']['tank2']:.1f}] "
+            f"level=[{d['tank1_level']:.3f},{d['tank2_level']:.3f}] "
+            f"sp=[{d['adjusted_setpoints']['tank1']:.3f},{d['adjusted_setpoints']['tank2']:.3f}]"
+        )
+    return lines
+
+
 def score_supervisor(supervisor_fn, battery=None):
     battery = SCENARIO_BATTERY if battery is None else battery
     traces = []
@@ -119,30 +145,17 @@ def score_supervisor(supervisor_fn, battery=None):
             + m["restore_gap"] * RESTORE_GAP_PENALTY
         )
         total += scenario_score
-        traces.append({"scenario": scenario.name, "score": round(scenario_score, 3), "log_report": build_log_report(result)})
+        traces.append({
+            "scenario": scenario.name,
+            "score": round(scenario_score, 3),
+            "log_report": build_log_report(result),
+            "decision_trace": _format_decision_trace(result),
+        })
     return total / len(battery), traces
 
 
 def validate_supervisor(supervisor_fn):
     return score_supervisor(supervisor_fn, battery=VALIDATION_SCENARIO_BATTERY)
-
-
-def load_failure_catalog(max_examples_per_category=3):
-    if not os.path.exists(FAILURE_POINTS_PATH):
-        return {"counts": {}, "examples": {}}
-    counts, examples = {}, {}
-    with open(FAILURE_POINTS_PATH, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            entry = json.loads(line)
-            key = f"{entry.get('tank', '?')}:{entry.get('type', 'unknown')}"
-            counts[key] = counts.get(key, 0) + 1
-            examples.setdefault(key, [])
-            if len(examples[key]) < max_examples_per_category:
-                examples[key].append(entry)
-    return {"counts": counts, "examples": examples}
 
 
 def load_context_report(max_relations=MAX_CONTEXT_RELATIONS):
@@ -170,90 +183,143 @@ def append_context_report(trial_idx, relations):
 
 def _compute_reference_stats():
     """Runs the plain PID-only controller (no supervisor) on baseline_no_fault
-    and returns real measured effort/error statistics for a genuinely healthy
-    episode. Used to give the LLM hard numbers instead of qualitative
-    "this plant oscillates" language - the actual healthy envelope turned out
-    to be much wider than that phrasing implies (errors up to +/-0.19 on
-    targets of only 0.30/0.35, pump effort routinely saturating near 12V),
-    which is almost certainly why early candidates kept false-triggering.
+    and returns measured per-loop effort/error statistics for a genuinely
+    healthy episode, split into the start-up transient (t < 200s: every
+    episode starts below the operating point) and the settled remainder.
     """
     import numpy as np
     scenario = FourTankScenarioConfig(name="baseline_no_fault")
     result = run_episode(pid_only_supervisor, scenario)
-    v1 = np.array(result["v1_hist"])[5:]
-    v2 = np.array(result["v2_hist"])[5:]
-    h1 = np.array(result["h1_hist"])[5:]
-    h2 = np.array(result["h2_hist"])[5:]
-    err1 = scenario.nominal_setpoint1 - h1
-    err2 = scenario.nominal_setpoint2 - h2
-    return {
-        "v1": {"mean": float(v1.mean()), "std": float(v1.std()), "min": float(v1.min()), "max": float(v1.max())},
-        "v2": {"mean": float(v2.mean()), "std": float(v2.std()), "min": float(v2.min()), "max": float(v2.max())},
-        "error1": {"mean_abs": float(np.abs(err1).mean()), "min": float(err1.min()), "max": float(err1.max())},
-        "error2": {"mean_abs": float(np.abs(err2).mean()), "min": float(err2.min()), "max": float(err2.max())},
-    }
+    t = np.array(result["time_hist"])
+    stats = {}
+    for phase, mask in (("startup", (t >= 1) & (t < 200)), ("settled", t >= 200)):
+        stats[phase] = {}
+        for tank, h_key, effort_key, target in (
+            ("tank1", "h1_hist", "effort1_hist", scenario.nominal_setpoint1),
+            ("tank2", "h2_hist", "effort2_hist", scenario.nominal_setpoint2),
+        ):
+            err = target - np.array(result[h_key])[mask]
+            effort = np.array(result[effort_key])[mask]
+            stats[phase][tank] = {
+                "err_mean_abs": float(np.abs(err).mean()), "err_min": float(err.min()), "err_max": float(err.max()),
+                "effort_mean": float(effort.mean()), "effort_min": float(effort.min()), "effort_max": float(effort.max()),
+            }
+    return stats
 
 
-def build_prompt(current_code, best_score, traces, failure_catalog, context_relations, best_val_score=None, reference_stats=None):
-    scenario_names = ", ".join(s.name for s in SCENARIO_BATTERY)
-    ref_block = ""
-    if reference_stats is not None:
-        r = reference_stats
-        ref_block = f"""
-MEASURED REFERENCE STATISTICS (from an actual healthy, fault-free episode with
-plain PID control, no supervisor action at all - these are hard numbers, not
-estimates):
-- Pump 1 (v1) effort: mean={r['v1']['mean']:.2f}V, std={r['v1']['std']:.2f}, range [{r['v1']['min']:.2f}, {r['v1']['max']:.2f}]V
-- Pump 2 (v2) effort: mean={r['v2']['mean']:.2f}V, std={r['v2']['std']:.2f}, range [{r['v2']['min']:.2f}, {r['v2']['max']:.2f}]V
-- Tank1 error: mean|error|={r['error1']['mean_abs']:.4f}, range [{r['error1']['min']:.4f}, {r['error1']['max']:.4f}] (on a target of ~0.30)
-- Tank2 error: mean|error|={r['error2']['mean_abs']:.4f}, range [{r['error2']['min']:.4f}, {r['error2']['max']:.4f}] (on a target of ~0.35)
+def _plant_block():
+    s = FourTankScenarioConfig(name="reference")
+    p = plant_parameters()
+    op = nominal_operating_point(s.nominal_setpoint1, s.nominal_setpoint2)
+    return f"""
+PLANT DESCRIPTION (process knowledge a plant engineer on this unit has):
+Quadruple-tank process (Johansson, 2000): four tanks, two pumps, two three-way
+split valves.
+- Lower tanks: tank1 (level h1) and tank2 (level h2). Upper tanks: tank3 (h3)
+  and tank4 (h4). Tank3 drains by gravity into tank1, tank4 drains into tank2,
+  and tank1/tank2 drain to the sump.
+- Pump 1 (voltage v1): its split valve sends gamma1={p['gamma_1']:.2f} of the flow to
+  tank1 and {1 - p['gamma_1']:.2f} to tank4 (which then drains into tank2).
+- Pump 2 (voltage v2): its split valve sends gamma2={p['gamma_2']:.2f} of the flow to
+  tank2 and {1 - p['gamma_2']:.2f} to tank3 (which then drains into tank1).
+- So each lower tank gets most of its inflow from the OTHER pump, delayed by
+  passing through an upper tank. This is the non-minimum-phase configuration
+  (gamma1 + gamma2 < 1).
+Mass balances (Torricelli outflow; all tank cross-sections A1..A4 = {p['A1']:g} m^2, g = {p['g']} m/s^2):
+  dh1/dt = -a1*sqrt(2g*h1) + a3*sqrt(2g*h3) + gamma1*k1*v1
+  dh2/dt = -a2*sqrt(2g*h2) + a4*sqrt(2g*h4) + gamma2*k2*v2
+  dh3/dt = -a3*sqrt(2g*h3) + (1-gamma2)*k2*v2
+  dh4/dt = -a4*sqrt(2g*h4) + (1-gamma1)*k1*v1
+with outlet areas a1={p['a1']}, a2={p['a2']}, a3={p['a3']}, a4={p['a4']} m^2 and pump
+gains k1={p['k1']}, k2={p['k2']} m^3/(V*s). Pumps are limited to {s.pump_output_limits[0]:g}-{s.pump_output_limits[1]:g} V.
+Only h1 and h2 are measured; h3 and h4 are NOT measured.
 
-This means: pump effort ROUTINELY SATURATES NEAR THE 1-12V RAIL and tracking
-error swings as large as +/-0.19 (roughly 25-60% of the setpoint) EVEN WHEN
-NOTHING IS WRONG. If your detection threshold would flag anything within
-these ranges, it WILL false-positive constantly. Your threshold must sit
-clearly outside this measured healthy envelope, not just "a bit above average".
+Base layer: two PI level loops at a 1 s sample time (Kp={s.pid_kp:g} V/m, Ki={s.pid_ki:g} V/(m*s)),
+paired off-diagonally, which is the correct pairing for this configuration:
+the tank1 loop drives PUMP 2 and the tank2 loop drives PUMP 1. In telemetry,
+tankN.pump_effort is the output voltage of the loop regulating tankN - so
+tank1.pump_effort is pump 2's voltage and tank2.pump_effort is pump 1's.
+error = setpoint - level.
+
+Design operating point at the nominal setpoints (h1={s.nominal_setpoint1}, h2={s.nominal_setpoint2}; steady state of
+the fault-free mass balances): tank1 loop (pump 2) = {op['v2']:.2f} V, tank2 loop
+(pump 1) = {op['v1']:.2f} V, h3 = {op['h3']:.3f} m, h4 = {op['h4']:.3f} m.
+
+Operation: every run starts with all four tanks at 0.20 m, below the operating
+point, so the first ~200 s are a start-up transient even when nothing is wrong.
+Faults can begin during or after it. Level measurements are noise-free
+(rounded to 0.1 mm).
+
+Known fault mode: an outlet leak in tank1 and/or tank2, i.e. the effective
+outlet area a1 and/or a2 increases, anywhere from mild (~1.5x) to severe
+(~4x). A leak can start and stop at any time and can be transient or
+persistent; both tanks can leak at the same time with overlapping intervals.
+Safety limits: h1 and h2 must stay within [{s.safety_bounds[0]}, {s.safety_bounds[1]}] m.
+
+Supervisor authority: you can only move the two level setpoints (clamped to
+[{s.setpoint_clamp[0]}, {s.setpoint_clamp[1]}] m) and raise the two anomaly flags. You cannot drive the pumps
+directly.
 """
 
-    return f"""
-You are improving a deterministic supervisory control function for a
-quadruple-tank (four-tank) water system - the classic Johansson benchmark.
-Two pumps (v1, v2) each feed TWO tanks: v1 feeds tank1 (h1) directly AND
-tank4 (h4) via a split valve, and h4 then drains into tank2 (h2) - so v1
-affects h1 immediately and h2 with a delay. Symmetrically, v2 feeds tank2 (h2)
-directly AND tank3 (h3), which drains into tank1 (h1) - so v2 affects h2
-immediately and h1 with a delay. Only h1 and h2 are controlled/measured here
-(mapped to "tank1"/"tank2" in the telemetry below); h3/h4 are not directly
-observed. This cross-coupling is stronger and more delayed than a simple
-cascade, and the default configuration is deliberately in the
-"non-minimum-phase" regime, where most pump flow is routed through the
-delayed cross-path rather than direct - so BOTH tanks show real, sustained
-effort/error oscillation even with NO fault present at all, just from
-control-loop interaction. Do not treat all oscillation as anomalous; a
-healthy tank here still varies over time.
-{ref_block}
-PRIMARY OBJECTIVE - READ THIS BEFORE ANYTHING ELSE: earlier candidates failed
-by triggering false anomaly flags on baseline_no_fault far more than they ever
-correctly caught a real fault (400-900+ false-flag events out of ~600 possible
-steps, versus at most a few hundred missed-fault events even in the worst
-fault scenario). The most recent batch overcorrected the other way: it
-consistently assumed a telemetry_window size (40-100 samples) larger than the
-real one, which silently made detection logic unreachable dead code, so every
-candidate scored identically to never flagging anything at all. Both failure
-modes are worse than staying silent; only flag an anomaly when you have
-strong, specific evidence clearly outside the measured healthy envelope above,
-using the correct window size stated below. Getting baseline_no_fault to
-(near) zero false positives while still catching real faults is the goal -
-do not sacrifice either one for the other.
 
-IMPORTANT UNITS/SCALE (this plant is NOT the same as any other tank system
-you may have seen): pump effort (v1, v2) ranges roughly 1-12 (volts), tank
-levels range roughly 0.05-0.48 (meters), and the natural settling time is
-~100-300 seconds - an order of magnitude slower than a typical small tank
-model. Do not reuse absolute threshold constants from a different plant;
-derive thresholds relative to this plant's own observed statistics (e.g. a
-ratio of recent-to-baseline effort within the telemetry window, or relative
-to nominal_target) so they remain meaningful at this specific scale.
+def _reference_block(r):
+    lines = ["MEASURED REFERENCE STATISTICS (an actual fault-free episode under the PI loops alone,",
+             "no supervisor action; hard numbers, not estimates):"]
+    for phase, label in (("startup", "Start-up transient (t = 1-199 s)"), ("settled", "Settled operation (t >= 200 s)")):
+        lines.append(f"- {label}:")
+        for tank in ("tank1", "tank2"):
+            s = r[phase][tank]
+            lines.append(
+                f"    {tank}: error range [{s['err_min']:.4f}, {s['err_max']:.4f}], mean|error|={s['err_mean_abs']:.4f}; "
+                f"loop effort mean={s['effort_mean']:.2f} V, range [{s['effort_min']:.2f}, {s['effort_max']:.2f}] V"
+            )
+    lines.append("Any anomaly condition that healthy values in these ranges can satisfy will false-positive.")
+    return "\n".join(lines)
+
+
+def _attempts_block(previous_attempts):
+    if not previous_attempts:
+        return ""
+    entries = []
+    for a in previous_attempts:
+        per_scenario = ", ".join(f"{t['scenario']}={t['score']:.0f}" for t in a["traces"]) if a.get("traces") else "not scored"
+        entries.append(f"- candidate {a['candidate']}: outcome={a['decision']}"
+                       + (f" ({a['reason']})" if a.get("reason") else "")
+                       + (f", avg score={a['score']:.1f}" if a.get("score") is not None else "")
+                       + f"\n  per-scenario: {per_scenario}"
+                       + f"\n  what it changed: {str(a.get('proposed_change') or '')[:500]}")
+    return ("\nATTEMPTS FROM THE PREVIOUS GENERATION THAT WERE NOT PROMOTED (sampled independently "
+            "from the same kind of prompt; learn from what they tried and how it scored):\n" + "\n".join(entries) + "\n")
+
+
+def build_prompt(current_code, best_score, traces, context_relations, best_val_score=None,
+                 reference_stats=None, previous_attempts=None):
+    scenario_names = ", ".join(s.name for s in SCENARIO_BATTERY)
+    sample = FourTankScenarioConfig(name="reference")
+    ref_block = _reference_block(reference_stats) if reference_stats is not None else ""
+    results = [{k: v for k, v in t.items() if k != "decision_trace"} for t in traces]
+    worst = sorted(traces, key=lambda t: -t["score"])[:TRACE_SCENARIOS]
+    trace_block = "\n\n".join(f"{t['scenario']} (score {t['score']:.1f}):\n" + "\n".join(t["decision_trace"]) for t in worst)
+
+    return f"""
+You are improving a deterministic supervisory function that sits above the
+PI level loops of a quadruple-tank water process. It watches the loops'
+telemetry, raises an anomaly flag per tank while that tank has a fault, and
+may adjust the level setpoints to mitigate a fault and restore them after it.
+{_plant_block()}
+{ref_block}
+
+HOW YOUR FUNCTION IS CALLED:
+- Every {sample.decision_interval_steps} s (from t = {sample.window_steps} s on), with the most recent {sample.window_steps} one-second
+  samples: len(telemetry_window) is ALWAYS exactly {sample.window_steps}. Consecutive windows
+  overlap by {sample.window_steps - sample.decision_interval_steps} samples.
+- "time" in each sample is seconds since the window's first sample (0, 1, ..., {sample.window_steps - 1}),
+  not absolute time.
+- The function is stateless: it is re-loaded fresh and keeps no memory between
+  calls; everything it knows comes from the current window and its arguments.
+- The flags you return are held until the next call {sample.decision_interval_steps} s later. Every second a
+  tank's held flag disagrees with that tank's true fault state counts as one
+  missed-anomaly or one false-positive event for that tank.
 
 The function signature MUST remain exactly:
 def supervise(telemetry_window, active_setpoints, nominal_targets):
@@ -266,29 +332,12 @@ def supervise(telemetry_window, active_setpoints, nominal_targets):
 
 telemetry_window is a list of dicts shaped like:
 {{"time": float, "tank1": {{"level": float, "pump_effort": float, "error": float}}, "tank2": {{...same keys...}}}}
-active_setpoints and nominal_targets are dicts with keys "tank1" (h1, actuated by v1) and "tank2" (h2, actuated by v2).
-
-CRITICAL, EXACT FACT ABOUT THE WINDOW SIZE: len(telemetry_window) is ALWAYS
-exactly 50 (one sample per second, 50 seconds of history) - never 30, 40, 80,
-or 100. This was previously 30 and has just been increased to 50 specifically
-to give you more samples to average over; do not assume any other value. Do
-not design any "minimum sample count" gate, "long block" vs "short block"
-comparison, or noise-averaging assumption around a block size larger than 50;
-a condition like `if n >= 80` or `len(window) >= 60` can NEVER be satisfied
-and makes your entire detector permanently unreachable dead code - this exact
-mistake (assuming a window of 40-100 when it was actually 30) caused every
-candidate in the previous batch to silently never fire at all, in either
-direction (no false positives, but also no real detections) - do not repeat
-it with the new number. If you want more averaging than 50 samples can
-provide, you cannot get it: the function is stateless (no memory between
-calls) and only ever sees the most recent 50 seconds, so your noise/threshold
-reasoning must be calibrated against n=50, not against a larger block you
-wish you had.
+active_setpoints and nominal_targets are dicts with keys "tank1" (h1 target) and "tank2" (h2 target).
 
 Rules for the code you write:
 - No imports, no exec/eval, no file/network/os access, no access to dunder attributes.
 - Only use: arithmetic, comparisons, built-in functions (abs, min, max, len, round, sum, sorted, range, all, any, isinstance, etc.), and the `math`/`statistics` modules (already available, do not import them).
-- The function must be a pure function of its three arguments plus module-level constants; it will be re-loaded fresh each run, so no persistent state across calls.
+- The function must be a pure function of its three arguments plus module-level constants.
 
 Current supervisor source:
 ```python
@@ -303,23 +352,28 @@ Current average score across the fixed scenario battery ({scenario_names}): {bes
 {f'''(GENERALIZATION CHECK: the current champion also scores {best_val_score:.1f} on a separate held-out battery of scenarios you never see (different fault onset times/magnitudes/durations than the ones shown to you, same categories). Its dev score is {best_score:.1f}, so the dev-vs-held-out gap is {best_val_score - best_score:+.1f}. You cannot see or optimize against the held-out battery directly, so a growing gap here is a signal that recent changes are fitting the exact numeric parameters of the visible scenarios rather than the underlying physical pattern.)''' if best_val_score is not None else ''}
 
 Per-scenario results with the current supervisor (failure_point_counts keys are "tank_name:failure_type"):
-{json.dumps(traces, indent=2)}
+{json.dumps(results, indent=2)}
 
-Aggregate failure-point catalog from past runs (counts and worst examples, keyed "tank_name:failure_type"):
-{json.dumps(failure_catalog, indent=2)}
-
+DECISION TRACES of the current supervisor on its {TRACE_SCENARIOS} worst-scoring scenarios, one line
+per call. t = absolute simulation time of the call (shown here only so you can
+line decisions up with the fault; your function never sees absolute time).
+fault = the TRUE fault state at that moment for [tank1, tank2] (Y = leaking).
+flag = the flags your function returned (held for the next {sample.decision_interval_steps} s). mean|e| and
+effort = per-loop means over the {sample.decision_interval_steps} s since the previous call. level = level at
+the call; sp = the setpoints your function returned.
+{trace_block}
+{_attempts_block(previous_attempts)}
 Lessons learned from previous trials - cause-effect relationships already discovered
 by earlier attempts (durable observations, not tied to any one candidate's code).
 REQUIRED: your code must not repeat a change that a relation below already says
-failed for a specific reason. If a relation identifies a specific bug pattern
-(e.g. "comparing a window against its own contaminated baseline"), your code must
-not contain that pattern - this is a hard constraint, not a suggestion:
+failed for a specific reason. If a relation identifies a specific bug pattern,
+your code must not contain that pattern - this is a hard constraint, not a suggestion:
 {json.dumps(context_relations, indent=2) if context_relations else "(none recorded yet - this is an early trial)"}
 
 Task:
-1. Diagnose what is causing the worst-scoring scenarios and/or the most common failure-point categories, keeping the non-minimum-phase cross-coupling and this plant's own scale in mind.
+1. Diagnose what is causing the worst-scoring scenarios, using the traces and the plant description: how does each fault actually show up in the telemetry of both loops, given the cross-coupling and the off-diagonal pairing?
 2. Propose an improved `supervise` function that reduces missed anomalies and false positives on both tanks without introducing new safety violations, and that restores both setpoints back toward nominal once their respective faults have genuinely cleared.
-3. Before finalizing, trace through what your code would do on baseline_no_fault using the measured reference statistics above: for each of tank1 and tank2, confirm that typical healthy effort/error values (including the extremes in the measured ranges) do NOT cross your anomaly condition. State this reasoning explicitly in "self_check" below - not just "it should work", but the actual numbers compared against your actual threshold.
+3. Before finalizing, check your anomaly conditions against the measured reference statistics for BOTH the start-up transient and settled operation: confirm numerically that healthy values in those ranges do not satisfy them. Put the actual numbers compared against your actual thresholds in "self_check".
 4. Separately, identify any NEW generalizable cause-effect relationship this trial's result reveals, whether or not this candidate gets promoted. Only include a relation if it is genuinely new - do not repeat one already listed above.
 
 You must output strictly JSON matching this structure:
@@ -338,7 +392,7 @@ You must output strictly JSON matching this structure:
 """
 
 
-def call_deepseek(prompt, max_retries=3):
+def call_deepseek(prompt, temperature=SAMPLING_TEMPERATURE, max_retries=3):
     for attempt in range(1, max_retries + 1):
         try:
             time.sleep(0.3)
@@ -349,39 +403,41 @@ def call_deepseek(prompt, max_retries=3):
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.0,
+                temperature=temperature,
             )
             return json.loads(response.choices[0].message.content)
         except Exception as e:
             print(f"[DEEPSEEK API ERROR - Attempt {attempt}/{max_retries}]: {e}")
             time.sleep(1.0 * attempt)
-    print(f"[CRITICAL] All {max_retries} retries failed for this trial.")
+    print(f"[CRITICAL] All {max_retries} retries failed for this call.")
     return None
 
 
-def promote(candidate_code, trial_idx):
-    gen_path = os.path.join(SUPERVISORS_DIR, f"supervisor_gen_{trial_idx}.py")
-    best_path = os.path.join(SUPERVISORS_DIR, f"best_supervisor_gen_{trial_idx}.py")
-    with open(gen_path, "w", encoding="utf-8") as f:
-        f.write(candidate_code)
-    with open(best_path, "w", encoding="utf-8") as f:
-        f.write(candidate_code)
-    with open(CURRENT_SUPERVISOR_PATH, "w", encoding="utf-8") as f:
-        f.write(candidate_code)
-    print(f"[PROMOTED] Trial {trial_idx} is the new current_supervisor.py")
+def _candidate_path(gen_idx, candidate):
+    return os.path.join(SUPERVISORS_DIR, f"supervisor_gen_{gen_idx}_c{candidate}.py")
 
 
-def save_candidate_only(candidate_code, trial_idx):
-    gen_path = os.path.join(SUPERVISORS_DIR, f"supervisor_gen_{trial_idx}.py")
-    with open(gen_path, "w", encoding="utf-8") as f:
+def promote(candidate_code, gen_idx, candidate):
+    best_path = os.path.join(SUPERVISORS_DIR, f"best_supervisor_gen_{gen_idx}.py")
+    for path in (_candidate_path(gen_idx, candidate), best_path, CURRENT_SUPERVISOR_PATH):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(candidate_code)
+    print(f"[PROMOTED] gen_{gen_idx} candidate {candidate} is the new current_supervisor.py")
+
+
+def save_candidate_only(candidate_code, gen_idx, candidate):
+    with open(_candidate_path(gen_idx, candidate), "w", encoding="utf-8") as f:
         f.write(candidate_code)
 
 
-def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, reason=None, validation_score=None, self_check=None):
+def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, reason=None, validation_score=None,
+              self_check=None, candidate=None, temperature=None):
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(TRIALS_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps({
             "trial": trial_idx,
+            "candidate": candidate,
+            "temperature": temperature,
             "decision": decision,
             "score": score,
             "validation_score": validation_score,
@@ -424,12 +480,15 @@ def find_scenario_regression(best_traces, cand_traces):
 
 
 def _next_trial_start():
-    existing = [f for f in os.listdir(SUPERVISORS_DIR) if f.startswith("supervisor_gen_") and f.endswith(".py")]
+    """Next generation number, from supervisor_gen_<N>.py (one candidate per
+    trial, older runs) and supervisor_gen_<N>_c<k>.py (several per generation)."""
     max_n = 0
-    for f in existing:
+    for f in os.listdir(SUPERVISORS_DIR):
+        if not (f.startswith("supervisor_gen_") and f.endswith(".py")):
+            continue
+        stem = f[len("supervisor_gen_"):-len(".py")].split("_c")[0]
         try:
-            n = int(f[len("supervisor_gen_"):-len(".py")])
-            max_n = max(max_n, n)
+            max_n = max(max_n, int(stem))
         except ValueError:
             continue
     return max_n + 1
@@ -448,9 +507,9 @@ def generate_report():
 
     with open(SUMMARY_CSV_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["trial", "decision", "score", "validation_score", "reason"])
+        writer.writerow(["trial", "candidate", "decision", "score", "validation_score", "reason"])
         for t in trials:
-            writer.writerow([t.get("trial"), t.get("decision"), t.get("score"), t.get("validation_score"), t.get("reason")])
+            writer.writerow([t.get("trial"), t.get("candidate"), t.get("decision"), t.get("score"), t.get("validation_score"), t.get("reason")])
 
     decision_counts = {}
     for t in trials:
@@ -490,14 +549,15 @@ def generate_report():
             f"- Dev/validation gap: {gap:+.2f} ({'worse on held-out - possible overfitting' if gap > 0.15 * abs(champion_score) + 5 else 'consistent with dev performance'})",
         ]
 
-    lines += ["", "## Trial history", "", f"- Total trials logged: {len(trials)}"]
+    lines += ["", "## Trial history", "", f"- Total candidates logged: {len(trials)}"]
     for decision, count in sorted(decision_counts.items(), key=lambda kv: -kv[1]):
         lines.append(f"  - {decision}: {count}")
 
-    lines += ["", "## Score trajectory (promoted trials only)", "", "| Trial | Dev score | Validation score |", "|---|---|---|"]
+    lines += ["", "## Score trajectory (promoted candidates only)", "", "| Generation | Candidate | Dev score | Validation score |", "|---|---|---|---|"]
     for t in promoted:
         val = t.get("validation_score")
-        lines.append(f"| gen_{t['trial']} | {t['score']:.2f} | {val:.2f} |" if val is not None else f"| gen_{t['trial']} | {t['score']:.2f} | - |")
+        val_str = f"{val:.2f}" if val is not None else "-"
+        lines.append(f"| gen_{t['trial']} | {t.get('candidate') or '-'} | {t['score']:.2f} | {val_str} |")
 
     lines += ["", "## Known open issues / lessons learned so far", ""]
     if relations:
@@ -512,13 +572,43 @@ def generate_report():
     print(f"[SUCCESS] Report written to {FINAL_REPORT_PATH} and {SUMMARY_CSV_PATH}")
 
 
+def _evaluate_candidate(response, candidate, gen_idx):
+    """Security-check, load and score one sampled response. Returns a record;
+    record["decision"] is provisional until the generation's winner is picked."""
+    if response is None:
+        return {"candidate": candidate, "decision": "SKIPPED", "reason": "DeepSeek call failed", "score": None}
+    record = {
+        "candidate": candidate,
+        "code": response.get("code", ""),
+        "failure_analysis": response.get("failure_analysis"),
+        "proposed_change": response.get("proposed_change"),
+        "self_check": response.get("self_check"),
+        "relations": response.get("relations_learned") or [],
+        "score": None,
+        "reason": None,
+    }
+    ok, reason = check_source(record["code"], required_args=MIMO_REQUIRED_ARGS)
+    if not ok:
+        record.update(decision="REJECTED_SECURITY", reason=reason)
+        return record
+    fn, err = safe_exec_supervisor(record["code"])
+    if err:
+        record.update(decision="REJECTED_LOAD", reason=err)
+        return record
+    record["fn"] = fn
+    record["score"], record["traces"] = score_supervisor(fn)
+    append_failure_points(record["traces"], f"trainer_gen_{gen_idx}_c{candidate}")
+    record["decision"] = "SCORED"
+    return record
+
+
 def main():
     if "--report" in sys.argv:
         generate_report()
         return
 
-    num_trials = int(sys.argv[1]) if len(sys.argv) > 1 else 10
-    start_trial = _next_trial_start()
+    num_generations = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+    start_gen = _next_trial_start()
 
     with open(CURRENT_SUPERVISOR_PATH, "r", encoding="utf-8") as f:
         current_code = f.read()
@@ -538,67 +628,76 @@ def main():
     print(f"[BASELINE] current_supervisor.py avg score: {best_score:.3f} (held-out: {best_val_score:.3f})")
 
     reference_stats = _compute_reference_stats()
-    print(f"[REFERENCE] healthy v1={reference_stats['v1']['mean']:.2f}V (std {reference_stats['v1']['std']:.2f}), "
-          f"v2={reference_stats['v2']['mean']:.2f}V (std {reference_stats['v2']['std']:.2f}), "
-          f"|err1| up to {reference_stats['error1']['max']:.3f}, |err2| up to {reference_stats['error2']['max']:.3f}")
+    print(f"[REFERENCE] healthy settled |err1| up to {max(abs(reference_stats['settled']['tank1']['err_min']), abs(reference_stats['settled']['tank1']['err_max'])):.4f}, "
+          f"|err2| up to {max(abs(reference_stats['settled']['tank2']['err_min']), abs(reference_stats['settled']['tank2']['err_max'])):.4f}")
 
-    for i in range(num_trials):
-        trial_idx = start_trial + i
-        print(f"\n=== Trial {i + 1}/{num_trials} (gen_{trial_idx}) ===")
-        failure_catalog = load_failure_catalog()
-        context_relations = load_context_report()
-        prompt = build_prompt(current_code, best_score, best_traces, failure_catalog, context_relations,
-                               best_val_score=best_val_score, reference_stats=reference_stats)
-        response = call_deepseek(prompt)
+    previous_attempts = []
+    for g in range(num_generations):
+        gen_idx = start_gen + g
+        print(f"\n=== Generation {g + 1}/{num_generations} (gen_{gen_idx}): sampling {CANDIDATES_PER_GENERATION} candidates "
+              f"at temperature {SAMPLING_TEMPERATURE} ===")
+        prompt = build_prompt(current_code, best_score, best_traces, load_context_report(),
+                              best_val_score=best_val_score, reference_stats=reference_stats,
+                              previous_attempts=previous_attempts)
+        with ThreadPoolExecutor(max_workers=CANDIDATES_PER_GENERATION) as pool:
+            responses = list(pool.map(lambda _: call_deepseek(prompt), range(CANDIDATES_PER_GENERATION)))
 
-        if response is None:
-            log_trial(trial_idx, "SKIPPED", None, None, None, reason="DeepSeek call failed")
-            continue
+        records = [_evaluate_candidate(resp, k, gen_idx) for k, resp in enumerate(responses, start=1)]
 
-        candidate_code = response.get("code", "")
-        failure_analysis = response.get("failure_analysis")
-        proposed_change = response.get("proposed_change")
-        self_check = response.get("self_check")
-        if self_check:
-            print(f"[SELF-CHECK] {self_check}")
-        new_relations = response.get("relations_learned") or []
-        if new_relations:
-            print(f"[LEARNED] {new_relations}")
-        append_context_report(trial_idx, new_relations)
-
-        ok, reason = check_source(candidate_code, required_args=MIMO_REQUIRED_ARGS)
-        if not ok:
-            print(f"[REJECTED - SECURITY] {reason}")
-            log_trial(trial_idx, "REJECTED_SECURITY", None, failure_analysis, proposed_change, reason=reason, self_check=self_check)
-            continue
-
-        candidate_fn, err = safe_exec_supervisor(candidate_code)
-        if err:
-            print(f"[REJECTED - LOAD] {err}")
-            log_trial(trial_idx, "REJECTED_LOAD", None, failure_analysis, proposed_change, reason=err, self_check=self_check)
-            continue
-
-        cand_score, cand_traces = score_supervisor(candidate_fn)
-        append_failure_points(cand_traces, f"trainer_trial_{trial_idx}")
-        print(f"Candidate score: {cand_score:.3f} (current best: {best_score:.3f})")
-
-        if cand_score < best_score:
-            regression = find_scenario_regression(best_traces, cand_traces)
-            if regression:
-                scen_name, old_s, new_s = regression
-                print(f"[REJECTED - REGRESSION] '{scen_name}' regressed {old_s:.1f} -> {new_s:.1f} despite a better aggregate score")
-                save_candidate_only(candidate_code, trial_idx)
-                log_trial(trial_idx, "REJECTED_REGRESSION", cand_score, failure_analysis, proposed_change,
-                          reason=f"{scen_name} regressed {old_s:.1f} -> {new_s:.1f}", self_check=self_check)
+        winner = None
+        for r in records:
+            if r["decision"] != "SCORED":
+                print(f"  c{r['candidate']}: [{r['decision']}] {r.get('reason')}")
                 continue
-            promote(candidate_code, trial_idx)
-            best_score, current_code, best_traces = cand_score, candidate_code, cand_traces
-            best_val_score, _ = validate_supervisor(candidate_fn)
-            print(f"[VALIDATION] held-out score: {best_val_score:.3f} (dev score: {cand_score:.3f})")
-            log_trial(trial_idx, "PROMOTED", cand_score, failure_analysis, proposed_change, validation_score=best_val_score, self_check=self_check)
+            if r["score"] >= best_score:
+                r["decision"] = "ROLLBACK"
+            else:
+                regression = find_scenario_regression(best_traces, r["traces"])
+                if regression:
+                    scen_name, old_s, new_s = regression
+                    r["decision"] = "REJECTED_REGRESSION"
+                    r["reason"] = f"{scen_name} regressed {old_s:.1f} -> {new_s:.1f}"
+                else:
+                    r["decision"] = "ELIGIBLE"
+                    if winner is None or r["score"] < winner["score"]:
+                        winner = r
+            print(f"  c{r['candidate']}: score {r['score']:.3f} (champion {best_score:.3f}) -> {r['decision']}"
+                  + (f" ({r['reason']})" if r.get("reason") else ""))
+
+        for r in records:
+            if r is winner:
+                continue
+            if r["decision"] == "ELIGIBLE":
+                r["decision"] = "NOT_SELECTED"
+                r["reason"] = f"beat the champion but candidate {winner['candidate']} scored lower"
+            if r.get("code"):
+                save_candidate_only(r["code"], gen_idx, r["candidate"])
+            log_trial(gen_idx, r["decision"], r["score"], r.get("failure_analysis"), r.get("proposed_change"),
+                      reason=r.get("reason"), self_check=r.get("self_check"), candidate=r["candidate"],
+                      temperature=SAMPLING_TEMPERATURE)
+
+        if winner is not None:
+            promote(winner["code"], gen_idx, winner["candidate"])
+            best_score, current_code, best_traces = winner["score"], winner["code"], winner["traces"]
+            best_val_score, _ = validate_supervisor(winner["fn"])
+            print(f"[VALIDATION] held-out score: {best_val_score:.3f} (dev score: {best_score:.3f})")
+            winner["decision"] = "PROMOTED"
+            log_trial(gen_idx, "PROMOTED", winner["score"], winner["failure_analysis"], winner["proposed_change"],
+                      validation_score=best_val_score, self_check=winner["self_check"], candidate=winner["candidate"],
+                      temperature=SAMPLING_TEMPERATURE)
         else:
-            save_candidate_only(candidate_code, trial_idx)
-            log_trial(trial_idx, "ROLLBACK", cand_score, failure_analysis, proposed_change, self_check=self_check)
+            print(f"[NO PROMOTION] champion stays at {best_score:.3f}")
+
+        # One set of relations per generation, from the promoted candidate (or
+        # the best-scoring one), so four near-duplicate lists don't crowd the
+        # context report.
+        scored = [r for r in records if r.get("score") is not None]
+        source = winner or (min(scored, key=lambda r: r["score"]) if scored else None)
+        if source is not None and source.get("relations"):
+            print(f"[LEARNED] {source['relations']}")
+            append_context_report(gen_idx, source["relations"])
+
+        previous_attempts = [r for r in records if r is not winner]
 
     print(f"\n[DONE] Final best score: {best_score:.3f}. current_supervisor.py reflects the best candidate found.")
     generate_report()

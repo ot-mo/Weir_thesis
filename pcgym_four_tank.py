@@ -122,6 +122,28 @@ def _make_plant():
     return four_tank(int_method="numpy")
 
 
+def plant_parameters() -> dict:
+    m = _make_plant()
+    return {k: getattr(m, k) for k in ("g", "gamma_1", "gamma_2", "k1", "k2", "a1", "a2", "a3", "a4", "A1", "A2", "A3", "A4")}
+
+
+def nominal_operating_point(h1_target: float, h2_target: float) -> dict:
+    """Steady state of the fault-free mass balances with h1/h2 held at their
+    targets: solves the two lower-tank balances for the pump voltages, then
+    the upper-tank balances for h3/h4."""
+    p = plant_parameters()
+    root = lambda h: np.sqrt(2 * p["g"] * h)
+    q1 = p["a1"] * root(h1_target)  # tank1 outflow = total tank1 inflow
+    q2 = p["a2"] * root(h2_target)
+    # q1 = g1*k1*v1 + (1-g2)*k2*v2 ;  q2 = (1-g1)*k1*v1 + g2*k2*v2
+    coeffs = np.array([[p["gamma_1"] * p["k1"], (1 - p["gamma_2"]) * p["k2"]],
+                       [(1 - p["gamma_1"]) * p["k1"], p["gamma_2"] * p["k2"]]])
+    v1, v2 = np.linalg.solve(coeffs, np.array([q1, q2]))
+    h3 = ((1 - p["gamma_2"]) * p["k2"] * v2 / p["a3"]) ** 2 / (2 * p["g"])
+    h4 = ((1 - p["gamma_1"]) * p["k1"] * v1 / p["a4"]) ** 2 / (2 * p["g"])
+    return {"v1": float(v1), "v2": float(v2), "h3": float(h3), "h4": float(h4)}
+
+
 def pid_only_supervisor(telemetry_window, active_setpoints, nominal_targets):
     return {
         "diagnosis": "PID-only baseline: no supervisory action.",
@@ -254,10 +276,16 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
                 new_setpoints[tank_name] = max(scenario.setpoint_clamp[0], min(scenario.setpoint_clamp[1], proposed))
                 new_flags[tank_name] = bool(flags.get(tank_name, False))
 
+            since_last = telemetry_buffer[-scenario.decision_interval_steps:]
             supervisor_decisions.append({
                 "time_s": t,
                 "tank1_level": round(h1n, 4),
                 "tank2_level": round(h2n, 4),
+                "fault_active": dict(fault_active),
+                "mean_abs_error": {tn: round(sum(abs(s[tn]["error"]) for s in since_last) / len(since_last), 4)
+                                   for tn in ("tank1", "tank2")},
+                "mean_effort": {tn: round(sum(s[tn]["pump_effort"] for s in since_last) / len(since_last), 2)
+                                for tn in ("tank1", "tank2")},
                 "adjusted_setpoints": new_setpoints,
                 "anomaly_flags": new_flags,
                 "diagnosis": str(decision.get("diagnosis", "")),
