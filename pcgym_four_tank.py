@@ -86,7 +86,13 @@ class FourTankScenarioConfig:
     pid_ki: float = 0.4
     pid_kd: float = 2.0
     pump_output_limits: tuple = (1.0, 12.0)
-    macro_cycle_steps: int = 50  # 50s per supervisor decision, and len(telemetry_window)
+    # Decision cadence and window length are deliberately separate: flags can
+    # only change at a decision, so a 50s cadence alone forced >=51 missed and
+    # >=51 false-positive steps per fault event no matter how good the
+    # detector was. Deciding every 10s on overlapping 50s windows removes that
+    # floor while keeping the same amount of history per decision.
+    window_steps: int = 50  # len(telemetry_window), always exactly this long
+    decision_interval_steps: int = 10  # supervisor decides every 10s
     setpoint_clamp: tuple = (0.05, 0.48)
     supervisor_timeout_s: float = 0.5
 
@@ -198,8 +204,12 @@ def run_episode(supervisor_fn: Callable, scenario: FourTankScenarioConfig) -> di
             elif not fault_active[tank_name] and last_anomaly_flags[tank_name]:
                 failure_points.append({"time_s": t, "type": "false_positive", "tank": tank_name, "detail": "no fault, last anomaly_flag=True"})
 
-        if t_step > 0 and t_step % scenario.macro_cycle_steps == 0:
-            window = telemetry_buffer[-scenario.macro_cycle_steps:]
+        if t_step >= scenario.window_steps and t_step % scenario.decision_interval_steps == 0:
+            # "time" is re-based to seconds since the window's first sample, so a
+            # supervisor can't key its flags off the scenarios' absolute fault times.
+            recent = telemetry_buffer[-scenario.window_steps:]
+            t0 = recent[0]["time"]
+            window = [{"time": s["time"] - t0, "tank1": s["tank1"], "tank2": s["tank2"]} for s in recent]
             nominal_targets = {"tank1": scenario.nominal_setpoint1, "tank2": scenario.nominal_setpoint2}
             (decision, err) = call_with_timeout(
                 supervisor_fn, (window, dict(active_setpoints), nominal_targets),

@@ -68,26 +68,30 @@ FAULT_REGRESSION_REL_TOLERANCE = 0.15
 # of magnitude slower than our own tank_sim.py), so onsets/offsets/durations
 # are scaled up accordingly - a 10-30s fault window here would be gone before
 # the supervisor could plausibly notice at a reasonable macro-cycle length.
+# Onsets/offsets deliberately sit OFF the 10s decision grid (e.g. 153, not
+# 150): when every dev fault landed exactly on a decision boundary, dev and
+# val were structurally different and the detection lag was a fixed artefact
+# of the grid rather than of the detector.
 SCENARIO_BATTERY = [
     FourTankScenarioConfig(name="baseline_no_fault"),
-    FourTankScenarioConfig(name="tank1_leak", leak1_onset_s=150.0, leak1_multiplier=2.5, leak1_offset_s=400.0),
-    FourTankScenarioConfig(name="tank2_leak", leak2_onset_s=150.0, leak2_multiplier=2.5, leak2_offset_s=400.0),
-    FourTankScenarioConfig(name="both_leaks", leak1_onset_s=150.0, leak1_multiplier=2.0, leak1_offset_s=350.0,
-                            leak2_onset_s=200.0, leak2_multiplier=2.0, leak2_offset_s=400.0),
-    FourTankScenarioConfig(name="tank1_severe_persistent", leak1_onset_s=400.0, leak1_multiplier=4.0, leak1_offset_s=None),
-    FourTankScenarioConfig(name="tank2_severe_persistent", leak2_onset_s=400.0, leak2_multiplier=4.0, leak2_offset_s=None),
+    FourTankScenarioConfig(name="tank1_leak", leak1_onset_s=153.0, leak1_multiplier=2.5, leak1_offset_s=404.0),
+    FourTankScenarioConfig(name="tank2_leak", leak2_onset_s=147.0, leak2_multiplier=2.5, leak2_offset_s=396.0),
+    FourTankScenarioConfig(name="both_leaks", leak1_onset_s=153.0, leak1_multiplier=2.0, leak1_offset_s=352.0,
+                            leak2_onset_s=207.0, leak2_multiplier=2.0, leak2_offset_s=405.0),
+    FourTankScenarioConfig(name="tank1_severe_persistent", leak1_onset_s=403.0, leak1_multiplier=4.0, leak1_offset_s=None),
+    FourTankScenarioConfig(name="tank2_severe_persistent", leak2_onset_s=397.0, leak2_multiplier=4.0, leak2_offset_s=None),
 ]
 
 # Held-out validation battery: same categories, different fault parameters,
 # never used to decide promotion.
 VALIDATION_SCENARIO_BATTERY = [
     FourTankScenarioConfig(name="val_baseline_no_fault"),
-    FourTankScenarioConfig(name="val_tank1_leak", leak1_onset_s=180.0, leak1_multiplier=2.2, leak1_offset_s=420.0),
-    FourTankScenarioConfig(name="val_tank2_leak", leak2_onset_s=180.0, leak2_multiplier=2.2, leak2_offset_s=420.0),
-    FourTankScenarioConfig(name="val_both_leaks", leak1_onset_s=130.0, leak1_multiplier=1.8, leak1_offset_s=330.0,
-                            leak2_onset_s=220.0, leak2_multiplier=2.4, leak2_offset_s=430.0),
-    FourTankScenarioConfig(name="val_tank1_severe_persistent", leak1_onset_s=350.0, leak1_multiplier=3.4, leak1_offset_s=None),
-    FourTankScenarioConfig(name="val_tank2_severe_persistent", leak2_onset_s=350.0, leak2_multiplier=3.4, leak2_offset_s=None),
+    FourTankScenarioConfig(name="val_tank1_leak", leak1_onset_s=183.0, leak1_multiplier=2.2, leak1_offset_s=424.0),
+    FourTankScenarioConfig(name="val_tank2_leak", leak2_onset_s=176.0, leak2_multiplier=2.2, leak2_offset_s=418.0),
+    FourTankScenarioConfig(name="val_both_leaks", leak1_onset_s=134.0, leak1_multiplier=1.8, leak1_offset_s=331.0,
+                            leak2_onset_s=226.0, leak2_multiplier=2.4, leak2_offset_s=437.0),
+    FourTankScenarioConfig(name="val_tank1_severe_persistent", leak1_onset_s=356.0, leak1_multiplier=3.4, leak1_offset_s=None),
+    FourTankScenarioConfig(name="val_tank2_severe_persistent", leak2_onset_s=344.0, leak2_multiplier=3.4, leak2_offset_s=None),
 ]
 
 
