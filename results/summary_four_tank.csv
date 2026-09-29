@@ -1,0 +1,9 @@
+trial,candidate,decision,score,validation_score,reason
+1,1,NOT_SELECTED,13903.157,,beat the champion but candidate 4 scored lower
+1,2,NOT_SELECTED,9135.261833333334,,beat the champion but candidate 4 scored lower
+1,3,NOT_SELECTED,7108.974666666666,,beat the champion but candidate 4 scored lower
+1,4,PROMOTED,6127.206833333334,7100.139666666666,
+2,1,REJECTED_REGRESSION,5627.450666666667,,tank1_leak regressed 3633.2 -> 13136.5
+2,2,ROLLBACK,7826.953999999999,,
+2,4,SKIPPED,,,DeepSeek call failed
+2,3,PROMOTED,4626.9783333333335,3599.673166666667,
