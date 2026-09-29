@@ -405,9 +405,26 @@ def call_deepseek(prompt, temperature=SAMPLING_TEMPERATURE, max_retries=3):
                 response_format={"type": "json_object"},
                 temperature=temperature,
             )
-            return json.loads(response.choices[0].message.content)
         except Exception as e:
             print(f"[DEEPSEEK API ERROR - Attempt {attempt}/{max_retries}]: {e}")
+            time.sleep(1.0 * attempt)
+            continue
+        choice = response.choices[0]
+        content = choice.message.content or ""
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            # Empty/truncated bodies are billed like any other response, so log
+            # enough to tell a token-limit cutoff (finish_reason="length") from
+            # JSON-mode returning nothing (finish_reason="stop").
+            usage = response.usage
+            details = getattr(usage, "completion_tokens_details", None)
+            reasoning = getattr(choice.message, "reasoning_content", None) or ""
+            print(f"[DEEPSEEK API ERROR - Attempt {attempt}/{max_retries}]: unparseable response ({e}); "
+                  f"finish_reason={choice.finish_reason}, content_chars={len(content)}, reasoning_chars={len(reasoning)}, "
+                  f"prompt_tokens={getattr(usage, 'prompt_tokens', None)}, "
+                  f"completion_tokens={getattr(usage, 'completion_tokens', None)}, "
+                  f"reasoning_tokens={getattr(details, 'reasoning_tokens', None)}")
             time.sleep(1.0 * attempt)
     print(f"[CRITICAL] All {max_retries} retries failed for this call.")
     return None
