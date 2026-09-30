@@ -11,3 +11,15 @@ trial,candidate,reasoning_effort,decision,score,validation_score,reason
 3,2,none,NOT_SELECTED,13640.3485,,beat the champion but candidate 4 scored lower
 3,3,none,NOT_SELECTED,12044.978333333334,,beat the champion but candidate 4 scored lower
 3,4,none,PROMOTED,11836.616000000002,11353.06,
+4,1,none,ROLLBACK,740261.9284999999,,
+4,2,none,REJECTED_SECURITY,,,import statements are not allowed
+4,3,none,ROLLBACK,28506.465833333335,,
+4,4,none,ROLLBACK,20838.0295,,
+5,1,none,ROLLBACK,16285.229166666664,,
+5,2,none,ROLLBACK,17000.215833333332,,
+5,3,none,ROLLBACK,740261.9284999999,,
+5,4,none,ROLLBACK,25098.271333333334,,
+6,1,none,ROLLBACK,31788.064,,
+6,2,none,REJECTED_REGRESSION,11640.115333333333,,tank2_severe_persistent regressed 1293.1 -> 4288.5
+6,3,none,ROLLBACK,740261.9284999999,,
+6,4,none,ROLLBACK,110461.86949999999,,

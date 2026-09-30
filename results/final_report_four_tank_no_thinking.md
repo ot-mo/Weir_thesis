@@ -1,6 +1,6 @@
 # Four-Tank MIMO Supervisor Training Report
 
-Generated: 2026-09-30T14:07:13+00:00
+Generated: 2026-09-30T14:11:42+00:00
 
 ## Current champion
 
@@ -11,17 +11,18 @@ Generated: 2026-09-30T14:07:13+00:00
 
 ## Trial history
 
-- Total candidates logged: 12
+- Total candidates logged: 24
+  - ROLLBACK: 13
   - NOT_SELECTED: 5
-  - ROLLBACK: 3
   - PROMOTED: 3
-  - REJECTED_REGRESSION: 1
+  - REJECTED_REGRESSION: 2
+  - REJECTED_SECURITY: 1
 
 ## Token usage per API request, by reasoning effort
 
 | Effort | Requests | Avg prompt | Avg cache hit | Avg completion | Avg reasoning |
 |---|---|---|---|---|---|
-| none | 12 | 7322 | 1408 | 1880 | 0 |
+| none | 24 | 7510 | 3349 | 2049 | 0 |
 
 ## Score trajectory (promoted candidates only)
 
@@ -37,3 +38,9 @@ Generated: 2026-09-30T14:07:13+00:00
 - With off-diagonal pairing, a leak in one lower tank lowers the other loop's effort because the leaked flow partly drains through the shared path.
 - Sustained pump effort above 11.5 V reliably indicates a leak in the corresponding lower tank, because the PI loop saturates at the 12 V limit.
 - When a lower tank leaks, its own loop effort saturates while the other loop's effort may drop due to shared outflow paths.
+- A lower-tank leak is better detected by its own loop's sustained high effort than by error, since setpoint trimming suppresses error.
+- With off-diagonal pairing, lowering one leaking tank's setpoint steadies its loop effort, so lingering level deficit plus effort detects the continued leak.
+- Trimming a leaking tank's setpoint lowers loop effort, so leak flags must be held until effort and deficit both fall together.
+- A cross-coupled off-diagonal pair lets one leak pull the other loop's effort down, so each tank needs its own baseline-relative test.
+- The sum of both loop efforts is setpoint-insensitive and exceeds 20 V during a leak, so it detects leaks after setpoint trimming.
+- Trimming only the leaking tank's setpoint leaves the combined effort high, allowing an early restore of the healthy tank's setpoint.
