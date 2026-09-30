@@ -1,0 +1,139 @@
+<mxfile host="app.diagrams.net" scale="1" border="0">
+  <diagram name="Page-1" id="oo9hbYjvQbOU6YmwVPnr">
+    <mxGraphModel dx="2118" dy="1890" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;" value="" vertex="1">
+          <mxGeometry height="200" width="650" x="95" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-2" parent="1" style="swimlane;whiteSpace=wrap;html=1;" value="&lt;div&gt;Process (Ball Mill Circuit)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="150" width="200" x="410" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-3" parent="ARqWDM-9jP1ple4LnIqh-2" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;" value="&lt;div align=&quot;left&quot;&gt;&lt;ul&gt;&lt;li&gt;&lt;font style=&quot;font-size: 19px;&quot;&gt;&lt;b&gt;Real time operations&lt;/b&gt;&lt;/font&gt;&lt;/li&gt;&lt;li&gt;&lt;font style=&quot;font-size: 19px;&quot;&gt;&lt;b&gt;Sensors: temp, pressure, flow, etc.&lt;/b&gt;&lt;/font&gt;&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="200" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-4" parent="1" style="swimlane;whiteSpace=wrap;html=1;" value="Deterministic controller (PID)" vertex="1">
+          <mxGeometry height="150" width="200" x="160" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-5" parent="ARqWDM-9jP1ple4LnIqh-4" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;" value="&lt;div align=&quot;left&quot;&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;&lt;font style=&quot;font-size: 19px;&quot;&gt;Sub-second control&lt;/font&gt;&lt;/b&gt;&lt;/li&gt;&lt;li&gt;&lt;b&gt;&lt;font style=&quot;font-size: 19px;&quot;&gt;Deterministic execution&amp;nbsp;&amp;nbsp;&lt;/font&gt;&lt;/b&gt;&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="170" x="10" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-6" edge="1" parent="1" style="shape=flexArrow;endArrow=classic;html=1;rounded=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" target="ARqWDM-9jP1ple4LnIqh-3" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="360" y="327.5" as="sourcePoint" />
+            <mxPoint x="450" y="300" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-7" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-2" style="shape=flexArrow;endArrow=classic;html=1;rounded=0;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" target="ARqWDM-9jP1ple4LnIqh-4" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="400" y="350" as="sourcePoint" />
+            <mxPoint x="450" y="300" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-8" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;&lt;b&gt;&lt;font style=&quot;font-size: 19px;&quot;&gt;Low level control &amp;amp; execution layer&lt;/font&gt;&lt;/b&gt;&amp;nbsp;&lt;/div&gt;&lt;div&gt;(Sub-second time scale)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="30" width="150" x="-50" y="317.5" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-9" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;&lt;font style=&quot;font-size: 19px;&quot;&gt;&lt;b&gt;&lt;font&gt;Executable Heuristic Supervisor &lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;font&gt;&lt;font&gt;(Online)&lt;/font&gt;&lt;font&gt;&lt;b&gt;&lt;font&gt;&amp;nbsp;&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font&gt;(1-5 minute timescale)&amp;nbsp;&lt;/font&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="160" width="150" x="-50" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;" value="" vertex="1">
+          <mxGeometry height="150" width="455" x="100" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-13" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;b&gt;Disturbances&lt;/b&gt;" vertex="1">
+          <mxGeometry height="30" width="60" x="660" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-14" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-40" style="shape=flexArrow;endArrow=classic;html=1;rounded=0;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="ARqWDM-9jP1ple4LnIqh-2" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="645" y="345" as="sourcePoint" />
+            <mxPoint x="450" y="190" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-15" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;b&gt;&lt;font style=&quot;font-size: 19px;&quot;&gt;Runs local compiled python logic&lt;/font&gt;&lt;/b&gt;" vertex="1">
+          <mxGeometry height="30" width="415" x="125" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-25" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;&lt;font style=&quot;font-size: 14px;&quot;&gt;Setpoint&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;font-size: 14px;&quot;&gt;updates&lt;/font&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="30" width="80" x="160" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-26" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;Sensor data&lt;/font&gt;" vertex="1">
+          <mxGeometry height="30" width="90" x="360" y="196" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-28" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;" value="" vertex="1">
+          <mxGeometry height="70" width="140" x="180" y="76" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-29" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;" value="" vertex="1">
+          <mxGeometry height="70" width="140" x="355" y="75" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-63" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-32" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="ARqWDM-9jP1ple4LnIqh-28">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-32" parent="1" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;align=center;" value="&lt;div align=&quot;center&quot;&gt;&lt;font style=&quot;font-size: 17px;&quot;&gt;&lt;b&gt;&lt;font&gt;Process Monitoring&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="140" x="355" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-33" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;&lt;b&gt;Dynamic set-point optimization&lt;/b&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="70" width="120" x="190" y="76" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-35" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;" value="" vertex="1">
+          <mxGeometry height="150" width="445" x="110" y="-140" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-39" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;&lt;b&gt;&lt;font style=&quot;font-size: 19px;&quot;&gt;LLM meta-supervisor&lt;/font&gt;&lt;/b&gt;&lt;/div&gt;(Offline)" vertex="1">
+          <mxGeometry height="80" width="140" x="-45" y="-110" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-40" parent="1" style="ellipse;whiteSpace=wrap;html=1;shapeInside=1;fillColor=none;" value="" vertex="1">
+          <mxGeometry height="55" width="80" x="650" y="317.5" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-42" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-33" style="shape=flexArrow;endArrow=classic;html=1;rounded=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.45;entryY=0.003;entryDx=0;entryDy=0;entryPerimeter=0;" target="ARqWDM-9jP1ple4LnIqh-4" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="370" y="160" as="sourcePoint" />
+            <mxPoint x="186.99" y="241.47" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-43" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-2" style="shape=flexArrow;endArrow=classic;html=1;rounded=0;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.75;entryY=1;entryDx=0;entryDy=0;" target="ARqWDM-9jP1ple4LnIqh-32" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="280" y="179" as="sourcePoint" />
+            <mxPoint x="281.99" y="240.47000000000003" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-44" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;b&gt;&lt;font style=&quot;font-size: 17px;&quot;&gt;Generated heuristic code&lt;/font&gt;&lt;/b&gt;" vertex="1">
+          <mxGeometry height="30" width="130" x="590" y="-80" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-50" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-46" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="ARqWDM-9jP1ple4LnIqh-48">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-46" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;&lt;b&gt;&lt;font style=&quot;font-size: 14px;&quot;&gt;Long-term logs:&lt;/font&gt;&lt;/b&gt;&lt;/div&gt;&lt;div&gt;Failure modes,&lt;/div&gt;&lt;div&gt;Disturbances,&lt;/div&gt;&lt;div&gt;Performance&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="110" x="130" y="-110" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-48" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;" value="" vertex="1">
+          <mxGeometry height="90" width="110" x="300" y="-110" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-49" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;b&gt;&lt;font style=&quot;font-size: 16px;&quot;&gt;LLM reasoning agent&lt;/font&gt;&lt;/b&gt;" vertex="1">
+          <mxGeometry height="55" width="80" x="315" y="-90" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-53" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-51" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="ARqWDM-9jP1ple4LnIqh-44">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-51" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;b&gt;&lt;font style=&quot;font-size: 18px;&quot;&gt;Heuristic code synthesis&lt;/font&gt;&lt;/b&gt;" vertex="1">
+          <mxGeometry height="70" width="90" x="460" y="-100" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-52" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-48" style="endArrow=none;html=1;rounded=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="ARqWDM-9jP1ple4LnIqh-51" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="370" y="160" as="sourcePoint" />
+            <mxPoint x="420" y="110" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-59" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-54" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="ARqWDM-9jP1ple4LnIqh-57">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-54" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;" value="" vertex="1">
+          <mxGeometry height="60" width="130" x="590" y="-95" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-60" edge="1" parent="1" source="ARqWDM-9jP1ple4LnIqh-57" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="ARqWDM-9jP1ple4LnIqh-10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ARqWDM-9jP1ple4LnIqh-57" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;b&gt;&lt;font style=&quot;font-size: 17px;&quot;&gt;Load compiled local heuristics&lt;/font&gt;&lt;/b&gt; (No API latency)" vertex="1">
+          <mxGeometry height="60" width="130" x="590" y="75" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
