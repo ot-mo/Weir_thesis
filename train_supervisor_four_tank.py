@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from supervisor_security import check_source, safe_exec_supervisor
+from supervisor_security import check_source, safe_exec_supervisor, SAFE_BUILTINS
 from two_tank_sim import MIMO_REQUIRED_ARGS
 from pcgym_four_tank import (
     FourTankScenarioConfig, run_episode, build_log_report, pid_only_supervisor,
@@ -312,6 +312,19 @@ def _reference_block(r):
     return "\n".join(lines)
 
 
+def _builtins_rule():
+    """The exact names the sandbox provides, generated from SAFE_BUILTINS. The
+    old hand-written list ended in "etc.", and 3 of 12 no-thinking candidates
+    guessed reversed(), which isn't provided, and raised NameError on every
+    call."""
+    is_exception = lambda v: isinstance(v, type) and issubclass(v, BaseException)
+    names = [n for n, v in SAFE_BUILTINS.items() if not is_exception(v) and n not in ("True", "False", "None")]
+    exceptions = [n for n, v in SAFE_BUILTINS.items() if is_exception(v)]
+    return (f"The ONLY built-in names available are: {', '.join(names)}. Exception types for try/except: "
+            f"{', '.join(exceptions)}. Any other built-in raises NameError at runtime, which counts as an "
+            f"exception on every call. The `math` and `statistics` modules are already available; do not import them.")
+
+
 def _attempts_block(previous_attempts):
     attempts = [a for a in previous_attempts or [] if a["decision"] != "SKIPPED"]
     if not attempts:
@@ -391,7 +404,7 @@ active_setpoints and nominal_targets are dicts with keys "tank1" (h1 target) and
 
 Rules for the code you write:
 - No imports, no exec/eval, no file/network/os access, no access to dunder attributes.
-- Only use: arithmetic, comparisons, built-in functions (abs, min, max, len, round, sum, sorted, range, all, any, isinstance, etc.), and the `math`/`statistics` modules (already available, do not import them).
+- {_builtins_rule()}
 - The function must be a pure function of its three arguments plus module-level constants.
 
 SCORING (per scenario; the battery score is the average over {scenario_names}; lower is better):
