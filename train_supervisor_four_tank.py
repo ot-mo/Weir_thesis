@@ -52,7 +52,9 @@ RESULTS_DIR = "results"
 FAILURE_POINTS_PATH = os.path.join(RESULTS_DIR, "failure_points_four_tank.jsonl")
 TRIALS_PATH = os.path.join(RESULTS_DIR, "supervisor_training_trials_four_tank.jsonl")
 CONTEXT_REPORT_PATH = os.path.join(RESULTS_DIR, "context_report_four_tank.jsonl")
-MAX_CONTEXT_RELATIONS = 25
+MAX_CONTEXT_RELATIONS = 12  # newest relations shown in the prompt
+MAX_RELATIONS_PER_GENERATION = 2
+MAX_RELATION_WORDS = 30
 SUMMARY_CSV_PATH = os.path.join(RESULTS_DIR, "summary_four_tank.csv")
 FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, "final_report_four_tank.md")
 
@@ -108,16 +110,32 @@ VALIDATION_SCENARIO_BATTERY = [
 
 
 def _format_decision_trace(result):
+    """One line per decision, but only where the held flag disagrees with the
+    true fault state or either of them changes, plus one row either side.
+    The dropped rows are steady state (flag == fault, nothing changing) and
+    were ~80% of the trace's prompt tokens."""
     yn = lambda flags: f"[{'Y' if flags['tank1'] else '-'},{'Y' if flags['tank2'] else '-'}]"
-    lines = []
-    for d in result["supervisor_decisions"]:
+    decisions = result["supervisor_decisions"]
+    states = [(yn(d["fault_active"]), yn(d["anomaly_flags"])) for d in decisions]
+    keep = set()
+    for i, (fault, flag) in enumerate(states):
+        if fault != flag or i == 0 or states[i - 1] != (fault, flag):
+            keep.update((i - 1, i, i + 1))
+    lines, last = [], -1
+    for i in sorted(k for k in keep if 0 <= k < len(decisions)):
+        if i > last + 1:
+            lines.append(f"  ... {i - last - 1} steady rows omitted")
+        d = decisions[i]
         lines.append(
-            f"t={d['time_s']:.0f}s fault={yn(d['fault_active'])} flag={yn(d['anomaly_flags'])} "
+            f"t={d['time_s']:.0f}s fault={states[i][0]} flag={states[i][1]} "
             f"mean|e|=[{d['mean_abs_error']['tank1']:.3f},{d['mean_abs_error']['tank2']:.3f}] "
             f"effort=[{d['mean_effort']['tank1']:.1f},{d['mean_effort']['tank2']:.1f}] "
             f"level=[{d['tank1_level']:.3f},{d['tank2_level']:.3f}] "
             f"sp=[{d['adjusted_setpoints']['tank1']:.3f},{d['adjusted_setpoints']['tank2']:.3f}]"
         )
+        last = i
+    if last < len(decisions) - 1:
+        lines.append(f"  ... {len(decisions) - 1 - last} steady rows omitted")
     return lines
 
 
@@ -278,28 +296,48 @@ def _reference_block(r):
 
 
 def _attempts_block(previous_attempts):
-    if not previous_attempts:
+    attempts = [a for a in previous_attempts or [] if a["decision"] != "SKIPPED"]
+    if not attempts:
         return ""
     entries = []
-    for a in previous_attempts:
+    for a in attempts:
         per_scenario = ", ".join(f"{t['scenario']}={t['score']:.0f}" for t in a["traces"]) if a.get("traces") else "not scored"
-        entries.append(f"- candidate {a['candidate']}: outcome={a['decision']}"
+        entries.append(f"- candidate {a['candidate']}: {a['decision']}"
                        + (f" ({a['reason']})" if a.get("reason") else "")
-                       + (f", avg score={a['score']:.1f}" if a.get("score") is not None else "")
-                       + f"\n  per-scenario: {per_scenario}"
-                       + f"\n  what it changed: {str(a.get('proposed_change') or '')[:500]}")
-    return ("\nATTEMPTS FROM THE PREVIOUS GENERATION THAT WERE NOT PROMOTED (sampled independently "
-            "from the same kind of prompt; learn from what they tried and how it scored):\n" + "\n".join(entries) + "\n")
+                       + (f", avg {a['score']:.1f}" if a.get("score") is not None else "")
+                       + f"; per-scenario: {per_scenario}"
+                       + f"\n  changed: {str(a.get('proposed_change') or '')[:300]}")
+    return ("\nPREVIOUS GENERATION'S NON-PROMOTED ATTEMPTS (sampled independently; learn from what "
+            "they tried and how it scored):\n" + "\n".join(entries) + "\n")
+
+
+def _results_block(traces):
+    lines = []
+    for t in traces:
+        m = t["log_report"]["metrics"]
+        counts = t["log_report"]["failure_point_counts"]
+        per_tank = lambda kind: f"t1={counts.get('tank1:' + kind, 0)} t2={counts.get('tank2:' + kind, 0)}"
+        lines.append(f"- {t['scenario']}: score {t['score']:.1f} | IAE {m['iae']:.1f} | missed {per_tank('missed_anomaly')} | "
+                     f"false_pos {per_tank('false_positive')} | violations {per_tank('safety_violation')} | "
+                     f"exceptions {m['exception_count']} | restore_gap {m['restore_gap']:.3f}")
+    return "\n".join(lines)
 
 
 def build_prompt(current_code, best_score, traces, context_relations, best_val_score=None,
                  reference_stats=None, previous_attempts=None):
+    """Everything that is identical across calls in a run comes first, so
+    DeepSeek's automatic prefix cache bills it at the cache-hit price on
+    parallel siblings, retries and later generations; the per-generation
+    state (champion, results, traces, attempts, lessons) comes last."""
     scenario_names = ", ".join(s.name for s in SCENARIO_BATTERY)
     sample = FourTankScenarioConfig(name="reference")
     ref_block = _reference_block(reference_stats) if reference_stats is not None else ""
-    results = [{k: v for k, v in t.items() if k != "decision_trace"} for t in traces]
     worst = sorted(traces, key=lambda t: -t["score"])[:TRACE_SCENARIOS]
     trace_block = "\n\n".join(f"{t['scenario']} (score {t['score']:.1f}):\n" + "\n".join(t["decision_trace"]) for t in worst)
+    gen_check = (f"Held-out check: the champion scores {best_val_score:.1f} on a separate battery you never see "
+                 f"(same categories, different fault timing/magnitude), a dev-vs-held-out gap of "
+                 f"{best_val_score - best_score:+.1f}. A growing gap means recent changes fit the visible "
+                 f"scenarios' exact numbers rather than the physics.") if best_val_score is not None else ""
 
     return f"""
 You are improving a deterministic supervisory function that sits above the
@@ -339,44 +377,19 @@ Rules for the code you write:
 - Only use: arithmetic, comparisons, built-in functions (abs, min, max, len, round, sum, sorted, range, all, any, isinstance, etc.), and the `math`/`statistics` modules (already available, do not import them).
 - The function must be a pure function of its three arguments plus module-level constants.
 
-Current supervisor source:
-```python
-{current_code}
-```
+SCORING (per scenario; the battery score is the average over {scenario_names}; lower is better):
+Score = IAE(both tanks) + violations*{VIOLATION_PENALTY} + missed*{MISSED_ANOMALY_PENALTY} + false_pos*FP_PENALTY + exceptions*{EXCEPTION_PENALTY} + restore_gap*{RESTORE_GAP_PENALTY}
+- missed / false_pos / restore_gap are counted PER TANK and summed. restore_gap = |final setpoint - nominal target|, counted only for a tank whose fault has cleared by the end.
+- FP_PENALTY is {NO_FAULT_FALSE_POSITIVE_PENALTY} for a tank that never faults in that scenario, {FALSE_POSITIVE_PENALTY} otherwise.
+- Promotion requires a better average AND no single-scenario regression beyond tolerance vs the champion: ~0 for baseline_no_fault, the larger of 15% or 100 points for fault scenarios.
 
-Current average score across the fixed scenario battery ({scenario_names}): {best_score}
-(Lower score is better. Score = IAE(both tanks combined) + violation_count*{VIOLATION_PENALTY} + missed_anomaly_count*{MISSED_ANOMALY_PENALTY} + false_positive_count*FP_PENALTY + exception_count*{EXCEPTION_PENALTY} + restore_gap*{RESTORE_GAP_PENALTY})
-(missed_anomaly/false_positive/restore_gap are evaluated PER TANK and summed. restore_gap is |final_setpoint - nominal_target| per tank, counted only when that tank's own fault has fully cleared by episode end.)
-(FP_PENALTY is {NO_FAULT_FALSE_POSITIVE_PENALTY} for a tank in a scenario where THAT TANK never faults at all - there is zero excuse to ever flag it there - and {FALSE_POSITIVE_PENALTY} otherwise.)
-(IMPORTANT: a candidate is only promoted if it improves the average score AND does not regress any individual scenario beyond tolerance versus the current champion, even if the average improves. Tolerance is asymmetric: for baseline_no_fault (no fault ever), tolerance is ~0 - any regression there is rejected outright. For a scenario with a genuine fault, up to ~15% (or 100 points, whichever is larger) of regression is allowed.)
-{f'''(GENERALIZATION CHECK: the current champion also scores {best_val_score:.1f} on a separate held-out battery of scenarios you never see (different fault onset times/magnitudes/durations than the ones shown to you, same categories). Its dev score is {best_score:.1f}, so the dev-vs-held-out gap is {best_val_score - best_score:+.1f}. You cannot see or optimize against the held-out battery directly, so a growing gap here is a signal that recent changes are fitting the exact numeric parameters of the visible scenarios rather than the underlying physical pattern.)''' if best_val_score is not None else ''}
+TASK:
+1. Diagnose what causes the worst-scoring scenarios, using the traces and the plant description: how does each fault actually show up in the telemetry of both loops, given the cross-coupling and the off-diagonal pairing?
+2. Write an improved `supervise` that reduces missed anomalies and false positives on both tanks without new safety violations, and restores both setpoints toward nominal once their faults have genuinely cleared.
+3. Check your anomaly conditions against the reference statistics for BOTH the start-up transient and settled operation, and put the actual numbers vs your actual thresholds in "self_check".
+4. Add at most {MAX_RELATIONS_PER_GENERATION} NEW generalizable cause-effect relations this result reveals, each ONE sentence of at most {MAX_RELATION_WORDS} words. Do not repeat a listed one.
 
-Per-scenario results with the current supervisor (failure_point_counts keys are "tank_name:failure_type"):
-{json.dumps(results, indent=2)}
-
-DECISION TRACES of the current supervisor on its {TRACE_SCENARIOS} worst-scoring scenarios, one line
-per call. t = absolute simulation time of the call (shown here only so you can
-line decisions up with the fault; your function never sees absolute time).
-fault = the TRUE fault state at that moment for [tank1, tank2] (Y = leaking).
-flag = the flags your function returned (held for the next {sample.decision_interval_steps} s). mean|e| and
-effort = per-loop means over the {sample.decision_interval_steps} s since the previous call. level = level at
-the call; sp = the setpoints your function returned.
-{trace_block}
-{_attempts_block(previous_attempts)}
-Lessons learned from previous trials - cause-effect relationships already discovered
-by earlier attempts (durable observations, not tied to any one candidate's code).
-REQUIRED: your code must not repeat a change that a relation below already says
-failed for a specific reason. If a relation identifies a specific bug pattern,
-your code must not contain that pattern - this is a hard constraint, not a suggestion:
-{json.dumps(context_relations, indent=2) if context_relations else "(none recorded yet - this is an early trial)"}
-
-Task:
-1. Diagnose what is causing the worst-scoring scenarios, using the traces and the plant description: how does each fault actually show up in the telemetry of both loops, given the cross-coupling and the off-diagonal pairing?
-2. Propose an improved `supervise` function that reduces missed anomalies and false positives on both tanks without introducing new safety violations, and that restores both setpoints back toward nominal once their respective faults have genuinely cleared.
-3. Before finalizing, check your anomaly conditions against the measured reference statistics for BOTH the start-up transient and settled operation: confirm numerically that healthy values in those ranges do not satisfy them. Put the actual numbers compared against your actual thresholds in "self_check".
-4. Separately, identify any NEW generalizable cause-effect relationship this trial's result reveals, whether or not this candidate gets promoted. Only include a relation if it is genuinely new - do not repeat one already listed above.
-
-You must output strictly JSON matching this structure:
+OUTPUT FORMAT - strictly this JSON:
 {{
   "failure_analysis": {{
     "what_failed": "string",
@@ -384,11 +397,37 @@ You must output strictly JSON matching this structure:
     "change_type": "structural | scalar/config | bug_fix",
     "next_recommendation": "string"
   }},
-  "self_check": "string: your threshold(s) vs. the measured healthy ranges above, numerically, for both tanks",
-  "proposed_change": "string",
+  "self_check": "string: your threshold(s) vs. the measured healthy ranges, numerically, for both tanks",
+  "proposed_change": "string, at most 2 sentences",
   "code": "full source of the new supervise function as a string",
-  "relations_learned": ["short generalizable cause-effect statement", ...]
+  "relations_learned": ["one sentence, at most {MAX_RELATION_WORDS} words", ...]
 }}
+
+========== CURRENT STATE (changes every generation) ==========
+
+Current supervisor source:
+```python
+{current_code}
+```
+
+Current battery score: {best_score:.1f}. {gen_check}
+
+Per-scenario results (t1/t2 = tank1/tank2 counts):
+{_results_block(traces)}
+
+DECISION TRACES of the current supervisor on its {TRACE_SCENARIOS} worst-scoring scenarios. Only rows
+where the flag disagrees with the true fault state or either changes are shown, with one row
+either side; omitted rows are steady (flag == fault). t = absolute simulation time (for lining
+up with the fault; your function never sees it). fault = TRUE fault state [tank1, tank2]
+(Y = leaking). flag = flags returned (held {sample.decision_interval_steps} s). mean|e|, effort = per-loop means over
+the last {sample.decision_interval_steps} s. level = level at the call; sp = setpoints returned.
+{trace_block}
+{_attempts_block(previous_attempts)}
+LESSONS LEARNED by earlier attempts. HARD CONSTRAINT: do not repeat a change a lesson says
+failed, and do not reintroduce a bug pattern a lesson identifies:
+{chr(10).join('- ' + r for r in context_relations) if context_relations else "(none recorded yet)"}
+
+Respond with the JSON object described under OUTPUT FORMAT.
 """
 
 
@@ -711,8 +750,9 @@ def main():
         scored = [r for r in records if r.get("score") is not None]
         source = winner or (min(scored, key=lambda r: r["score"]) if scored else None)
         if source is not None and source.get("relations"):
-            print(f"[LEARNED] {source['relations']}")
-            append_context_report(gen_idx, source["relations"])
+            relations = source["relations"][:MAX_RELATIONS_PER_GENERATION]
+            print(f"[LEARNED] {relations}")
+            append_context_report(gen_idx, relations)
 
         previous_attempts = [r for r in records if r is not winner]
 
