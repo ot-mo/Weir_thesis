@@ -122,6 +122,7 @@ python train_supervisor.py [num_trials]        # single-tank
 python train_supervisor_two_tank.py [num_trials]  # two-tank
 python train_supervisor_four_tank.py [num_generations] [--effort low|high|max]  # PC-Gym four-tank, 4 candidates/generation
 python train_supervisor_four_tank.py --report      # four-tank report only, no API calls
+touch STOP_TRAINING                                # four-tank: stop cleanly after the current generation
 
 # Compare the current trained supervisor against a PID-only baseline
 python benchmark_baselines.py     # single-tank

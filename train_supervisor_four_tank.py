@@ -61,8 +61,15 @@ FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, "final_report_four_tank.md")
 CANDIDATES_PER_GENERATION = 4
 # deepseek-flash always runs in thinking mode here, which ignores
 # `temperature`; candidate diversity comes from sampling several times.
-# Reasoning effort is the cost lever: thinking tokens are ~90% of each call.
-REASONING_EFFORT_DEFAULT = "high"  # DeepSeek's own default; "low" and "max" also exist
+# Reasoning effort is the cost lever (output is ~97% of the bill). Measured on
+# DeepSeek's usage export: "high" averaged ~61k output tokens per request and
+# 8 of 15 replies came back empty; "low" averaged ~28k with none empty, and
+# its generation still reached the perfect-detection floor.
+REASONING_EFFORT_DEFAULT = "low"  # DeepSeek's own default is "high"; "max" also exists
+# Create this file to stop cleanly after the current generation. Killing the
+# process instead leaves already-sent requests running and billed on
+# DeepSeek's side.
+STOP_FILE = "STOP_TRAINING"
 TRACE_SCENARIOS = 2  # champion's worst-scoring scenarios shown as decision traces
 
 VIOLATION_PENALTY = 500
@@ -730,8 +737,17 @@ def main():
     print(f"[REFERENCE] healthy settled |err1| up to {max(abs(reference_stats['settled']['tank1']['err_min']), abs(reference_stats['settled']['tank1']['err_max'])):.4f}, "
           f"|err2| up to {max(abs(reference_stats['settled']['tank2']['err_min']), abs(reference_stats['settled']['tank2']['err_max'])):.4f}")
 
+    if os.path.exists(STOP_FILE):
+        os.remove(STOP_FILE)
+        print(f"[STOP] removed a stale {STOP_FILE} left over from an earlier run")
+
     previous_attempts = []
     for g in range(num_generations):
+        if os.path.exists(STOP_FILE):
+            os.remove(STOP_FILE)
+            print(f"\n[STOP] {STOP_FILE} found - stopping before generation {g + 1}/{num_generations}; "
+                  f"no requests were sent for it")
+            break
         gen_idx = start_gen + g
         print(f"\n=== Generation {g + 1}/{num_generations} (gen_{gen_idx}): sampling {CANDIDATES_PER_GENERATION} candidates "
               f"at reasoning effort {effort} ===")
