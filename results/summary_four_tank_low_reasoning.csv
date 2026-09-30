@@ -1,0 +1,13 @@
+trial,candidate,reasoning_effort,decision,score,validation_score,reason
+1,1,low,NOT_SELECTED,9901.9285,,beat the champion but candidate 2 scored lower
+1,3,low,NOT_SELECTED,5208.764166666667,,beat the champion but candidate 2 scored lower
+1,4,low,NOT_SELECTED,12836.0755,,beat the champion but candidate 2 scored lower
+1,2,low,PROMOTED,4385.261833333333,3608.6878333333334,
+2,2,low,ROLLBACK,6718.595166666667,,
+2,3,low,ROLLBACK,30491.928499999998,,
+2,4,low,ROLLBACK,8551.9285,,
+2,1,low,PROMOTED,2635.2618333333335,2608.6878333333334,
+3,1,low,ROLLBACK,13413.507166666664,,
+3,2,low,ROLLBACK,2635.2618333333335,,
+3,3,low,ROLLBACK,5635.261833333333,,
+3,4,low,ROLLBACK,9035.261833333334,,

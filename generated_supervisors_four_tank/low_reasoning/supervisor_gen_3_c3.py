@@ -1,0 +1,44 @@
+def supervise(telemetry_window, active_setpoints, nominal_targets):
+    DROP_SLOPE = -0.0015
+    DROP_ERR = 0.03
+    DROP_MARGIN = 0.02
+    EFF_HI = {'tank1': 10.7, 'tank2': 10.0}
+    EFF_ERR = 0.05
+    RECOV_SLOPE = 0.0002
+    SAT_EFF = 11.8
+    SAT_RECOV = 0.0002
+
+    def eval_tank(tank):
+        sp = float(nominal_targets[tank])
+        levels = [s[tank]['level'] for s in telemetry_window]
+        efforts = [s[tank]['pump_effort'] for s in telemetry_window]
+        n = len(levels)
+        if n == 0:
+            return False
+        L = levels[-1]
+        err = sp - L
+        k = min(10, n)
+        if k > 1:
+            slope10 = (levels[-1] - levels[-k]) / float(k - 1)
+        else:
+            slope10 = 0.0
+        if n >= 10:
+            e_max10 = max(efforts[-10:])
+        else:
+            e_max10 = max(efforts)
+        drop = (slope10 < DROP_SLOPE) and (err > DROP_ERR) and (L < sp - DROP_MARGIN)
+        effort_flag = (e_max10 >= EFF_HI[tank]) and (err > EFF_ERR) and (slope10 <= RECOV_SLOPE)
+        sat = (e_max10 >= SAT_EFF) and (slope10 < SAT_RECOV)
+        return bool(drop or effort_flag or sat)
+
+    a1 = eval_tank('tank1')
+    a2 = eval_tank('tank2')
+
+    return {
+        'diagnosis': 'tank1 anomaly=' + str(a1) + '; tank2 anomaly=' + str(a2),
+        'adjusted_setpoints': {
+            'tank1': float(nominal_targets['tank1']),
+            'tank2': float(nominal_targets['tank2']),
+        },
+        'anomaly_flags': {'tank1': bool(a1), 'tank2': bool(a2)},
+    }
