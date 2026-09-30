@@ -1,7 +1,7 @@
 """Layer 3 for the PC-Gym four-tank MIMO testbed: offline DeepSeek-driven
 heuristic learner for the four-tank supervisor.
 
-Run manually: python train_supervisor_four_tank.py [num_generations]
+Run manually: python train_supervisor_four_tank.py [num_generations] [--effort low|high|max]
 
 Mirrors train_supervisor_two_tank.py's structure (elitist hill-climb,
 security-check gate, fixed scenario battery, held-out validation, context
@@ -9,9 +9,9 @@ report, generalization-gap prompt), pointed at pcgym_four_tank.py's plant,
 with three additions taken from the program-search literature (Eureka,
 FunSearch, AlphaEvolve, Learning Beyond Gradients):
 - Each generation samples CANDIDATES_PER_GENERATION programs in parallel from
-  the same prompt at a non-zero temperature, and the best eligible one is
-  promoted. At temperature 0 the same prompt returned near-identical code
-  trial after trial.
+  the same prompt, and the best eligible one is promoted. (deepseek-flash's
+  thinking mode ignores `temperature`, so the diversity comes from sampling
+  several times, not from a temperature setting.)
 - The prompt describes the plant the way a process engineer on this unit
   would know it (layout, mass balances, parameters, loop pairing, operating
   point, fault mode), rather than only its measured statistics.
@@ -59,7 +59,10 @@ SUMMARY_CSV_PATH = os.path.join(RESULTS_DIR, "summary_four_tank.csv")
 FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, "final_report_four_tank.md")
 
 CANDIDATES_PER_GENERATION = 4
-SAMPLING_TEMPERATURE = 1.0
+# deepseek-flash always runs in thinking mode here, which ignores
+# `temperature`; candidate diversity comes from sampling several times.
+# Reasoning effort is the cost lever: thinking tokens are ~90% of each call.
+REASONING_EFFORT_DEFAULT = "high"  # DeepSeek's own default; "low" and "max" also exist
 TRACE_SCENARIOS = 2  # champion's worst-scoring scenarios shown as decision traces
 
 VIOLATION_PENALTY = 500
@@ -431,7 +434,10 @@ Respond with the JSON object described under OUTPUT FORMAT.
 """
 
 
-def call_deepseek(prompt, temperature=SAMPLING_TEMPERATURE, max_retries=3):
+def call_deepseek(prompt, reasoning_effort=REASONING_EFFORT_DEFAULT, max_retries=3):
+    """Returns (parsed JSON or None, token usage of every attempt that got a
+    response, including unparseable ones, since those are billed too)."""
+    usage_per_attempt = []
     for attempt in range(1, max_retries + 1):
         try:
             time.sleep(0.3)
@@ -442,7 +448,7 @@ def call_deepseek(prompt, temperature=SAMPLING_TEMPERATURE, max_retries=3):
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
-                temperature=temperature,
+                reasoning_effort=reasoning_effort,
             )
         except Exception as e:
             print(f"[DEEPSEEK API ERROR - Attempt {attempt}/{max_retries}]: {e}")
@@ -450,23 +456,41 @@ def call_deepseek(prompt, temperature=SAMPLING_TEMPERATURE, max_retries=3):
             continue
         choice = response.choices[0]
         content = choice.message.content or ""
+        usage = _usage(response)
+        usage_per_attempt.append(usage)
         try:
-            return json.loads(content)
+            return json.loads(content), usage_per_attempt
         except json.JSONDecodeError as e:
             # Empty/truncated bodies are billed like any other response, so log
             # enough to tell a token-limit cutoff (finish_reason="length") from
             # JSON-mode returning nothing (finish_reason="stop").
-            usage = response.usage
-            details = getattr(usage, "completion_tokens_details", None)
             reasoning = getattr(choice.message, "reasoning_content", None) or ""
             print(f"[DEEPSEEK API ERROR - Attempt {attempt}/{max_retries}]: unparseable response ({e}); "
                   f"finish_reason={choice.finish_reason}, content_chars={len(content)}, reasoning_chars={len(reasoning)}, "
-                  f"prompt_tokens={getattr(usage, 'prompt_tokens', None)}, "
-                  f"completion_tokens={getattr(usage, 'completion_tokens', None)}, "
-                  f"reasoning_tokens={getattr(details, 'reasoning_tokens', None)}")
+                  f"prompt_tokens={usage['prompt']}, completion_tokens={usage['completion']}, "
+                  f"reasoning_tokens={usage['reasoning']}")
             time.sleep(1.0 * attempt)
     print(f"[CRITICAL] All {max_retries} retries failed for this call.")
-    return None
+    return None, usage_per_attempt
+
+
+def _usage(response):
+    u = response.usage
+    details = getattr(u, "completion_tokens_details", None)
+    return {
+        "prompt": getattr(u, "prompt_tokens", None),
+        "cache_hit": getattr(u, "prompt_cache_hit_tokens", None),
+        "completion": getattr(u, "completion_tokens", None),
+        "reasoning": getattr(details, "reasoning_tokens", None),
+    }
+
+
+def _sum_usage(usages):
+    total = {"requests": len(usages), "prompt": 0, "cache_hit": 0, "completion": 0, "reasoning": 0}
+    for u in usages:
+        for key in ("prompt", "cache_hit", "completion", "reasoning"):
+            total[key] += u.get(key) or 0
+    return total
 
 
 def _candidate_path(gen_idx, candidate):
@@ -487,13 +511,14 @@ def save_candidate_only(candidate_code, gen_idx, candidate):
 
 
 def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, reason=None, validation_score=None,
-              self_check=None, candidate=None, temperature=None):
+              self_check=None, candidate=None, reasoning_effort=None, usage=None):
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(TRIALS_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps({
             "trial": trial_idx,
             "candidate": candidate,
-            "temperature": temperature,
+            "reasoning_effort": reasoning_effort,
+            "usage": usage,
             "decision": decision,
             "score": score,
             "validation_score": validation_score,
@@ -563,9 +588,10 @@ def generate_report():
 
     with open(SUMMARY_CSV_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["trial", "candidate", "decision", "score", "validation_score", "reason"])
+        writer.writerow(["trial", "candidate", "reasoning_effort", "decision", "score", "validation_score", "reason"])
         for t in trials:
-            writer.writerow([t.get("trial"), t.get("candidate"), t.get("decision"), t.get("score"), t.get("validation_score"), t.get("reason")])
+            writer.writerow([t.get("trial"), t.get("candidate"), t.get("reasoning_effort"), t.get("decision"), t.get("score"),
+                             t.get("validation_score"), t.get("reason")])
 
     decision_counts = {}
     for t in trials:
@@ -609,6 +635,20 @@ def generate_report():
     for decision, count in sorted(decision_counts.items(), key=lambda kv: -kv[1]):
         lines.append(f"  - {decision}: {count}")
 
+    usage_by_effort = {}
+    for t in trials:
+        if t.get("usage"):
+            usage_by_effort.setdefault(t.get("reasoning_effort") or "?", []).extend(t["usage"])
+    if usage_by_effort:
+        lines += ["", "## Token usage per API request, by reasoning effort", "",
+                  "| Effort | Requests | Avg prompt | Avg cache hit | Avg completion | Avg reasoning |",
+                  "|---|---|---|---|---|---|"]
+        for effort_level, usages in usage_by_effort.items():
+            s = _sum_usage(usages)
+            n = s["requests"]
+            lines.append(f"| {effort_level} | {n} | {s['prompt'] / n:.0f} | {s['cache_hit'] / n:.0f} | "
+                         f"{s['completion'] / n:.0f} | {s['reasoning'] / n:.0f} |")
+
     lines += ["", "## Score trajectory (promoted candidates only)", "", "| Generation | Candidate | Dev score | Validation score |", "|---|---|---|---|"]
     for t in promoted:
         val = t.get("validation_score")
@@ -628,13 +668,15 @@ def generate_report():
     print(f"[SUCCESS] Report written to {FINAL_REPORT_PATH} and {SUMMARY_CSV_PATH}")
 
 
-def _evaluate_candidate(response, candidate, gen_idx):
+def _evaluate_candidate(response, usage, candidate, gen_idx):
     """Security-check, load and score one sampled response. Returns a record;
     record["decision"] is provisional until the generation's winner is picked."""
     if response is None:
-        return {"candidate": candidate, "decision": "SKIPPED", "reason": "DeepSeek call failed", "score": None}
+        return {"candidate": candidate, "decision": "SKIPPED", "reason": "DeepSeek call failed", "score": None,
+                "usage": usage}
     record = {
         "candidate": candidate,
+        "usage": usage,
         "code": response.get("code", ""),
         "failure_analysis": response.get("failure_analysis"),
         "proposed_change": response.get("proposed_change"),
@@ -663,7 +705,8 @@ def main():
         generate_report()
         return
 
-    num_generations = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+    num_generations = next((int(a) for a in sys.argv[1:] if a.isdigit()), 4)
+    effort = sys.argv[sys.argv.index("--effort") + 1] if "--effort" in sys.argv else REASONING_EFFORT_DEFAULT
     start_gen = _next_trial_start()
 
     with open(CURRENT_SUPERVISOR_PATH, "r", encoding="utf-8") as f:
@@ -691,14 +734,18 @@ def main():
     for g in range(num_generations):
         gen_idx = start_gen + g
         print(f"\n=== Generation {g + 1}/{num_generations} (gen_{gen_idx}): sampling {CANDIDATES_PER_GENERATION} candidates "
-              f"at temperature {SAMPLING_TEMPERATURE} ===")
+              f"at reasoning effort {effort} ===")
         prompt = build_prompt(current_code, best_score, best_traces, load_context_report(),
                               best_val_score=best_val_score, reference_stats=reference_stats,
                               previous_attempts=previous_attempts)
         with ThreadPoolExecutor(max_workers=CANDIDATES_PER_GENERATION) as pool:
-            responses = list(pool.map(lambda _: call_deepseek(prompt), range(CANDIDATES_PER_GENERATION)))
+            responses = list(pool.map(lambda _: call_deepseek(prompt, reasoning_effort=effort),
+                                      range(CANDIDATES_PER_GENERATION)))
 
-        records = [_evaluate_candidate(resp, k, gen_idx) for k, resp in enumerate(responses, start=1)]
+        records = [_evaluate_candidate(resp, usage, k, gen_idx) for k, (resp, usage) in enumerate(responses, start=1)]
+        tokens = _sum_usage([u for r in records for u in r["usage"]])
+        print(f"[TOKENS] {tokens['requests']} requests: prompt {tokens['prompt']} (cache hit {tokens['cache_hit']}), "
+              f"completion {tokens['completion']} (reasoning {tokens['reasoning']})")
 
         winner = None
         for r in records:
@@ -730,7 +777,7 @@ def main():
                 save_candidate_only(r["code"], gen_idx, r["candidate"])
             log_trial(gen_idx, r["decision"], r["score"], r.get("failure_analysis"), r.get("proposed_change"),
                       reason=r.get("reason"), self_check=r.get("self_check"), candidate=r["candidate"],
-                      temperature=SAMPLING_TEMPERATURE)
+                      reasoning_effort=effort, usage=r["usage"])
 
         if winner is not None:
             promote(winner["code"], gen_idx, winner["candidate"])
@@ -740,7 +787,7 @@ def main():
             winner["decision"] = "PROMOTED"
             log_trial(gen_idx, "PROMOTED", winner["score"], winner["failure_analysis"], winner["proposed_change"],
                       validation_score=best_val_score, self_check=winner["self_check"], candidate=winner["candidate"],
-                      temperature=SAMPLING_TEMPERATURE)
+                      reasoning_effort=effort, usage=winner["usage"])
         else:
             print(f"[NO PROMOTION] champion stays at {best_score:.3f}")
 
