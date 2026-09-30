@@ -1,0 +1,35 @@
+\documentclass{LTHthesis}
+%\documentclass[svenska]{LTHthesis} % Om rapporten är på svenska, så är det
+                                    % den här raden som skall användas, och 
+                                    % den föregående skall tas bort.
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}  %% Comment if you are not using utf8
+\usepackage{mathptmx, helvet}
+\usepackage{graphicx}
+
+\addbibresource{mybib.bib}  %%  Comment if you don't want to use bibtex.
+
+\begin{document}
+\begin{titlepages}
+\author{John Student}
+\title{A very Important Contribution\\ to the Theory}
+\year{2099}
+\month{June}
+\TFRT{9999}  %%  You will get the number from the department.
+\printer{Media-Tryck}  %% Probably. You may get other information from the department.
+\end{titlepages}
+\chapter*{Abstract}
+A condensed description of my work.
+\chapter*{Acknowledgements}
+These people helped me a lot with my work.
+\tableofcontents
+\chapter{Introduction}
+This is a description of my work.
+\chapter{Background}
+\section{First Principles}
+In this section we describe the first principles. They are based on \cite{ast_wit2011}.
+
+\printbibliography  %% Comment if you don't want to use bibtex
+\end{document}
+
+

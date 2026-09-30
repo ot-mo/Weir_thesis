@@ -1,0 +1,24 @@
+The LTHthesis class assumes a standard TeXlive or MikTeX installation
+and specifically requires the packages
+
+* memoir
+* amsmath,amsfonts,amssymb
+* ntheorem,latexsym,framed
+* biblatex
+
+If you don't have them already, they should be easily installable 
+using your standard package manager.
+
+The 'memoir' class, which is used by LTHthesis, is quite comprehensive,
+and many of the commonly used auxiliary packages are unnecessary, and in
+many cases counterproductive.
+
+* caption, subcaption. The correct format for captions is already set.
+                       If you need something like subfigures, please see
+	http://tex.stackexchange.com/questions/116807/subfigure-with-memoir
+
+* theorem. The correct format for theorems is already set, using
+           the package ntheorem.
+
+* fancyheadings. The headers and footers have their correct format.
+ 
