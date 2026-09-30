@@ -2,15 +2,14 @@
 width (117 mm) so fonts stay legible without scaling.
 
 Run: MPLBACKEND=Agg python make_thesis_figures.py   (no API calls)
-Writes Thesis_latex/figures/architecture.pdf and
-Thesis_latex/figures/four_tank_reasoning_comparison.pdf.
+Writes Thesis_latex/figures/four_tank_reasoning_comparison.pdf. The
+architecture figure (three_layer_architecture.png) comes from the goal document.
 """
 
 import json
 import os
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch
 
 from plot_reasoning_comparison import RUNS, oracle_score, trajectory
 from supervisor_security import safe_exec_supervisor
@@ -25,53 +24,6 @@ TEXT_WIDTH_IN = 117 / 25.4
 plt.rcParams.update({"font.size": 7.5, "font.family": "serif",
                      "font.serif": ["Times New Roman", "Times", "STIXGeneral", "DejaVu Serif"],
                      "mathtext.fontset": "stix", "axes.titlesize": 8, "legend.fontsize": 6.5})
-
-
-def architecture_figure():
-    fig, ax = plt.subplots(figsize=(TEXT_WIDTH_IN, 2.35))
-    ax.set_xlim(0, 10)
-    ax.set_ylim(0, 5)
-    ax.axis("off")
-
-    def box(x, y, w, h, title, body, colour):
-        ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.05,rounding_size=0.12",
-                                    facecolor=colour, edgecolor="black", linewidth=0.7))
-        ax.text(x + w / 2, y + h - 0.28, title, ha="center", va="top", fontsize=7.5, fontweight="bold")
-        ax.text(x + w / 2, y + h - 0.72, body, ha="center", va="top", fontsize=6.0, linespacing=1.25)
-
-    def arrow(x0, y0, x1, y1, text="", text_xy=None):
-        ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
-                    arrowprops=dict(arrowstyle="-|>", linewidth=0.8, color="black", shrinkA=0, shrinkB=0))
-        if text:
-            tx, ty = text_xy
-            ax.text(tx, ty, text, ha="center", va="center", fontsize=6, style="italic")
-
-    box(0.05, 2.75, 2.8, 2.15, "Layer 3: LLM learner",
-        "offline, run manually;\nreads champion code,\nscores, traces, lessons;\nproposes candidates", "#dbe8f5")
-    box(3.6, 2.75, 2.8, 2.15, "Gate",
-        "AST security check,\nrestricted built-ins,\ntimeout; scored on fault\nbattery; promoted if better", "#f5ecd6")
-    box(7.15, 2.75, 2.8, 2.15, "Layer 2: supervisor",
-        "deterministic Python;\nevery decision interval:\nanomaly flags and\nadjusted setpoints", "#dcefdc")
-    box(7.15, 0.1, 2.8, 1.9, "Layer 1: PI/PID",
-        "fixed, never generated;\ntracks active setpoints,\ndrives the pumps", "#eeeeee")
-    box(3.6, 0.1, 2.8, 1.9, "Plant",
-        "tank levels and pumps;\ninjected leak faults", "#ffffff")
-
-    arrow(2.85, 3.85, 3.6, 3.85)
-    arrow(6.4, 3.85, 7.15, 3.85)
-    arrow(8.55, 2.75, 8.55, 2.0, "setpoints", (9.3, 2.38))
-    arrow(7.15, 1.05, 6.4, 1.05)
-    # Offline path: logged plant telemetry back to the learner (one arrowhead).
-    ax.plot([3.6, 1.45, 1.45], [0.6, 0.6, 2.2], color="black", linewidth=0.8)
-    ax.annotate("", xy=(1.45, 2.75), xytext=(1.45, 2.2),
-                arrowprops=dict(arrowstyle="-|>", linewidth=0.8, color="black", shrinkA=0, shrinkB=0))
-    ax.text(0.7, 1.55, "logged\ntelemetry\n(offline)", ha="center", va="center", fontsize=6, style="italic")
-    arrow(5.0, 2.0, 7.6, 2.75)
-    ax.text(6.75, 2.2, "telemetry", ha="center", va="center", fontsize=6, style="italic")
-
-    fig.tight_layout(pad=0.1)
-    fig.savefig(os.path.join(FIGURES_DIR, "architecture.pdf"))
-    plt.close(fig)
 
 
 def reasoning_figure():
@@ -113,7 +65,6 @@ def reasoning_figure():
 
 def main():
     os.makedirs(FIGURES_DIR, exist_ok=True)
-    architecture_figure()
     reasoning_figure()
     print(f"[SUCCESS] wrote figures to {FIGURES_DIR}")
 

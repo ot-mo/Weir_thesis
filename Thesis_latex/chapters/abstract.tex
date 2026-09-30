@@ -3,7 +3,7 @@
 Advanced process controllers based on learned models, such as TD-MPC, can
 perform well but are hard to inspect, verify and audit. This thesis
 investigates an alternative in which a large language model (LLM) is used
-\emph{offline} as a heuristic learner: it reads logs, scores and decision
+\emph{offline} as a meta-supervisor: it reads logs, scores and decision
 traces from a simulated process and writes a small, deterministic supervisory
 function in Python. The function runs on top of fixed PID loops, raises
 per-loop anomaly flags and adjusts setpoints. Every candidate passes a static

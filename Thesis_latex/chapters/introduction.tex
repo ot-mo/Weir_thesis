@@ -2,58 +2,108 @@
 \label{ch:introduction}
 
 \section{Motivation}
-Mineral processing circuits such as grinding mills are multivariable, strongly
-coupled and subject to frequent disturbances \cite{pomerleau2000}. They are
-typically run with decentralized PID loops at the base layer and a supervisory
-layer on top that coordinates setpoints and handles abnormal situations.
-Learned controllers such as TD-MPC \cite{hansen2022tdmpc,hansen2024tdmpc2}
-can perform well in this role, but their behaviour is encoded in neural
-networks, which makes it hard for engineers to inspect, verify and certify
-what the controller will do in situations it has not seen.
-\TODO{Describe the industrial setting at Weir: the process, the current TD-MPC controller and why interpretability and auditability matter there.}
+Continuous processes in mineral processing run around the clock and must
+deliver a product of consistent quality while respecting equipment and
+safety constraints. They are strongly nonlinear and tightly coupled, several
+key process states are only indirectly measured, and the control solutions
+must be transparent enough for operators and engineers to trust and
+maintain \cite{pomerleau2000}.
 
-Recent work has shown that large language models (LLMs) can act as the
-mutation operator in an evolutionary search over \emph{programs}, with an
-automated evaluator as the only judge of quality
-\cite{romeraparedes2024funsearch,novikov2025alphaevolve,ma2024eureka,weng2026lbg}.
-The result of such a search is ordinary source code that can be read,
-reviewed and tested like any other code. This thesis asks whether that idea
-can produce supervisory control logic of practical quality.
+A classic example is the control of a grinding mill circuit, in which the
+mill, the sump and the classification unit (cyclone clusters) form a coupled
+process that determines the product particle size and the operating
+conditions of the circuit. The objective is to regulate the product P80,
+the particle size below which 80\% of the product mass falls, around a
+target while keeping the sump level stable and the circulating load within
+its limits. Variations in fresh feed flow, ore density and percentage of
+solids change the operating conditions, so an action that improves particle
+size regulation can upset the sump level or the circulating load. The
+supervisory controller must coordinate setpoint changes to satisfy these
+competing requirements and maintain performance under conditions beyond
+those used during its development.
 
-\section{Research questions}
-\begin{enumerate}
-\item Can an LLM, used offline as a heuristic learner, generate deterministic,
-  security-checked supervisory control code that performs close to a learned
-  controller such as TD-MPC while remaining interpretable?
-\item What information does the LLM need about the process, the evaluation and
-  earlier attempts to make steady progress?
-\item How must the evaluation be designed so that the search improves the
-  intended behaviour rather than exploiting the score?
-\item How much LLM reasoning is needed, and what does it cost?
-\end{enumerate}
-\TODO{Refine the research questions together with the supervisors.}
+In practice, grinding circuits use PID loops whose setpoints are adjusted by
+operators, expert systems or fuzzy-logic supervisors. These build on
+established operating knowledge but require considerable tuning, and
+hand-crafted rules grow complex as new conditions are added. Model
+predictive control and, more recently, learning-based controllers that
+combine learned world models with planning, such as TD-MPC
+\cite{hansen2022tdmpc,hansen2024tdmpc2}, coordinate the loops through
+prediction and optimization, but their decisions are hard to inspect and
+their behaviour beyond the training data is uncertain. This leaves a gap
+between supervisory logic that is interpretable but costly to maintain and
+controllers that are adaptive but opaque.
 
-\section{Approach and contributions}
-The work uses a three-layer architecture (Chapter~\ref{ch:method}): fixed PID
-loops at the bottom, a deterministic supervisor function in the middle, and an
-offline LLM-driven learner at the top that rewrites the supervisor between
-runs. The approach is developed and evaluated on three toy processes of
-increasing difficulty (Chapter~\ref{ch:toy}) before it is applied to the
-industrial process. The contributions so far are:
-\begin{itemize}
-\item an implementation of the three-layer architecture with a security
-  sandbox for generated code and a scoring scheme with safeguards against
-  specification gaming;
-\item results on a single tank, a two-tank cascade and the quadruple-tank
-  process, including a comparison with a perfect-detection oracle;
-\item an ablation of the LLM's reasoning effort on the quadruple-tank process.
-\end{itemize}
+Large language models (LLMs) can generate and iteratively refine code and
+heuristics from environment feedback
+\cite{romeraparedes2024funsearch,novikov2025alphaevolve,ma2024eureka,hatgiskessell2026promptpo,weng2026lbg}.
+Using an LLM directly in the control loop is unsuitable because of latency,
+non-determinism and safety risks. This thesis therefore uses the LLM as an
+offline \emph{meta-supervisor} that synthesizes explicit, interpretable
+supervisory rules. The rules run locally and update the setpoints of the
+existing low-level controllers, and they are benchmarked against Weir's
+current TD-MPC-type recommendation algorithm, which combines learned
+world-model prediction with control.
+
+\section{Research questions and hypotheses}
+The objective is to evaluate how well LLM-synthesized supervisory heuristics
+coordinate setpoints in a grinding circuit compared with a model-based
+predictive supervisory controller, and to identify where their performance
+degrades.
+\begin{description}
+\item[RQ1 (Comparative performance)] How does an LLM-synthesized supervisory
+  heuristic compare with a model-based predictive supervisory controller in
+  mill circuit control, in terms of P80 regulation, sump level stability,
+  compliance with circulating load limits and smoothness of setpoint
+  adjustments, under nominal conditions and disturbances within the
+  development range?
+\item[RQ2 (Robustness and generalizability)] How does this performance
+  change when the amplitudes, temporal patterns or combinations of
+  disturbances fall outside the development range, and what failure modes
+  and empirical operating limits can be identified?
+\end{description}
+The research questions are tested through the following null hypotheses:
+\begin{description}
+\item[$\boldsymbol{H_{0,1}}$:] Within the development range, there is no
+  difference in performance metrics between the LLM-synthesized supervisor
+  and the benchmark controller.
+\item[$\boldsymbol{H_{0,2}}$:] Beyond the development range, the degradation
+  in performance relative to the development range is the same for both
+  controllers.
+\end{description}
+
+\section{Contributions}
+The expected scientific contributions are:
+\begin{description}
+\item[C1 (RQ1)] A quantified comparison, with effect sizes and confidence
+  intervals, of an LLM-synthesized supervisor and a TD-MPC controller on P80
+  regulation, sump level, circulating load and setpoint smoothness, tested
+  through $H_{0,1}$.
+\item[C2 (RQ2)] Degradation curves showing how the performance of each
+  controller changes as disturbances move beyond the development range,
+  tested through $H_{0,2}$, together with a catalogue of observed failure
+  modes and an empirical operating envelope for the LLM-based supervisor.
+\item[C3] An estimate of how much performance varies between independently
+  generated policies, indicating how reliable LLM-based synthesis is as a
+  design method.
+\end{description}
+Before the industrial study, the method was developed on three toy processes
+of increasing difficulty (Chapter~\ref{ch:toy}): a single tank, a two-tank
+cascade and the quadruple-tank process. This preliminary work produced the
+architecture, the security sandbox and the evaluation safeguards used in the
+industrial study, and an ablation of how much LLM reasoning the synthesis
+needs.
 \TODO{Add the industrial case study and the comparison with TD-MPC.}
+
+\section{Delimitations}
+The study is limited to one grinding circuit in simulation. Formal stability
+guarantees, plant deployment and sensor-fault diagnosis are outside the
+scope.
 
 \section{Outline}
 Chapter~\ref{ch:background} gives background on supervisory process control,
 fault detection and LLM-guided program search. Chapter~\ref{ch:method}
-describes the architecture, the security sandbox, the scoring and the training
-loop. Chapter~\ref{ch:toy} presents the three toy examples and their results.
-Chapter~\ref{ch:discussion} discusses the findings and their limitations, and
-Chapter~\ref{ch:conclusions} concludes.
+describes the architecture, the security sandbox, the scoring and the
+training loop. Chapter~\ref{ch:toy} presents the three toy examples and
+their results. Chapter~\ref{ch:discussion} discusses the findings and their
+limitations, and Chapter~\ref{ch:conclusions} concludes.

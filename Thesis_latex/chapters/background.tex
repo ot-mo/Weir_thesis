@@ -29,7 +29,11 @@ AlphaEvolve \cite{novikov2025alphaevolve} scales the same idea into a general
 coding agent and reports that removing the rich problem context from the
 prompt is among the most harmful ablations. Eureka \cite{ma2024eureka} uses an
 LLM to write reward functions for reinforcement learning and feeds numeric
-results back in a reflection step. \textcite{weng2026lbg} describes an
+results back in a reflection step. PromptPO \cite{hatgiskessell2026promptpo}
+prompts an LLM with Python descriptions of the state space, action space and
+reward function and refines executable policies from rollout feedback; the
+resulting policies range from tuned proportional controllers to rule-based
+plans. \textcite{weng2026lbg} describes an
 iterative workflow in which a policy is improved by inspecting execution
 traces and rewriting code instead of through gradient updates. This thesis applies the
 pattern to supervisory control, where the evaluator is a closed-loop

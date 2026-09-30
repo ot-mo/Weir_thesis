@@ -2,22 +2,36 @@
 \label{ch:method}
 
 \section{Three-layer architecture}
-The control system is split into three layers (Figure~\ref{fig:architecture}).
-Layer~1 consists of fixed PID or PI loops that track the active setpoints at
-every sample; they are never generated or modified by the LLM. Layer~2 is a
-deterministic supervisor, a plain Python function that runs at a slower
-decision interval, inspects a window of recent telemetry and returns anomaly
-flags and adjusted setpoints. Layer~3 is the LLM-driven learner. It runs
-offline and manually, never inside the control loop, and its only output is
-new source code for Layer~2. The LLM's cost, latency and reliability therefore
-never affect the real-time loop.
+The framework separates real-time execution from high-level reasoning in
+three layers (Figure~\ref{fig:architecture}).
+\begin{description}
+\item[Low-level control and execution layer] The existing deterministic PID
+  loops track the active setpoints at a sub-second rate and are never
+  generated or modified by the LLM.
+\item[Executable heuristic supervisor] A deterministic Python function that
+  runs locally at a slower rate, 1--5 minutes in the grinding circuit and
+  3--10~s in the toy examples. It monitors a window of recent telemetry and
+  updates the setpoints; in the toy examples it also raises one anomaly flag
+  per loop.
+\item[LLM meta-supervisor] Runs offline. It reads long-term logs of
+  performance, disturbances and failure modes and synthesizes new heuristic
+  code for the supervisor. It is the only layer that calls the LLM's API.
+\end{description}
+The LLM's cost, latency and non-determinism therefore never affect the
+real-time loop. Before generated code is loaded into the executable
+supervisor, it must pass the security check in Section~\ref{sec:sandbox} and
+improve on the current supervisor in the evaluation of
+Section~\ref{sec:scoring}. Together, the two upper layers take the place of
+the TD-MPC supervisory controller.
 
 \begin{figure}[tb]
   \centering
-  \includegraphics[width=\textwidth]{architecture}
-  \caption{The three-layer architecture. The LLM learner works offline on
-    logged results; only code that passes the security check and improves on
-    the current champion is promoted to the online supervisor.}
+  \includegraphics[width=\textwidth]{three_layer_architecture}
+  \caption{The three-layer architecture, shown for the grinding circuit. The
+    LLM meta-supervisor works offline on logged data and synthesizes
+    heuristic code, which the executable supervisor runs locally without API
+    calls. In the toy examples, the process is a tank simulation and the
+    supervisor runs every 3--10~s.}
   \label{fig:architecture}
 \end{figure}
 
@@ -34,6 +48,7 @@ is stateless: it is reloaded for every run and sees only its arguments.
 The returned flags are held until the next decision.
 
 \section{Security sandbox}
+\label{sec:sandbox}
 Generated code is treated as untrusted and passes three checks before it runs
 on any telemetry:
 \begin{enumerate}
@@ -93,7 +108,7 @@ interval. It gives a lower bound that makes it possible to tell whether a
 plateau is caused by the search or by the test bed.
 
 \section{Training loop}
-Each generation of the Layer-3 learner performs the following steps.
+Each generation of the LLM meta-supervisor performs the following steps.
 \begin{enumerate}
 \item Build a prompt. The part that is the same in every call contains a
   description of the process at the level a plant engineer would know it
