@@ -220,3 +220,17 @@ __marimo__/
 
 # Trainer stop switch (create to stop after the current generation)
 STOP_TRAINING
+
+# LaTeX build files (compile with -output-directory outside the repo instead)
+Thesis_latex/*.aux
+Thesis_latex/*.bbl
+Thesis_latex/*.bcf
+Thesis_latex/*.blg
+Thesis_latex/*.run.xml
+Thesis_latex/*.toc
+Thesis_latex/*.out
+Thesis_latex/*.fls
+Thesis_latex/*.fdb_latexmk
+Thesis_latex/*.synctex.gz
+Thesis_latex/main.pdf
+Thesis_latex/thesis.pdf

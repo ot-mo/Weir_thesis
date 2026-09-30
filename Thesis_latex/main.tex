@@ -1,12 +1,18 @@
 \documentclass{LTHthesis}
 %\documentclass[svenska]{LTHthesis} % Use this line instead if the thesis is written in Swedish.
 \usepackage[T1]{fontenc}
-\usepackage[utf8]{inputenc}
+% No \usepackage[utf8]{inputenc}: UTF-8 is LaTeX's default input encoding since
+% 2018, and because LTHthesis loads biblatex first it only caused a warning.
 \usepackage{mathptmx, helvet}
 \usepackage{graphicx}
+\usepackage{upquote}  % straight quotes in the verbatim code listing
 \graphicspath{{figures/}}
 
 \addbibresource{references.bib}
+% Let long URLs in the bibliography break anywhere instead of being stretched.
+\setcounter{biburlnumpenalty}{9000}
+\setcounter{biburllcpenalty}{9000}
+\setcounter{biburlucpenalty}{9000}
 
 % Marks text that is still to be written. Search for \TODO before submission.
 \newcommand{\TODO}[1]{\textbf{[TODO: #1]}}

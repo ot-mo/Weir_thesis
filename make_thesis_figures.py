@@ -21,7 +21,10 @@ from train_supervisor_four_tank import (
 FIGURES_DIR = os.path.join("Thesis_latex", "figures")
 TEXT_WIDTH_IN = 117 / 25.4
 
-plt.rcParams.update({"font.size": 7.5, "font.family": "serif", "axes.titlesize": 8, "legend.fontsize": 6.5})
+# Times-like fonts to match the thesis body text (mathptmx).
+plt.rcParams.update({"font.size": 7.5, "font.family": "serif",
+                     "font.serif": ["Times New Roman", "Times", "STIXGeneral", "DejaVu Serif"],
+                     "mathtext.fontset": "stix", "axes.titlesize": 8, "legend.fontsize": 6.5})
 
 
 def architecture_figure():
@@ -64,7 +67,7 @@ def architecture_figure():
                 arrowprops=dict(arrowstyle="-|>", linewidth=0.8, color="black", shrinkA=0, shrinkB=0))
     ax.text(0.7, 1.55, "logged\ntelemetry\n(offline)", ha="center", va="center", fontsize=6, style="italic")
     arrow(5.0, 2.0, 7.6, 2.75)
-    ax.text(6.05, 2.58, "telemetry", ha="center", va="center", fontsize=6, style="italic", rotation=15)
+    ax.text(6.75, 2.2, "telemetry", ha="center", va="center", fontsize=6, style="italic")
 
     fig.tight_layout(pad=0.1)
     fig.savefig(os.path.join(FIGURES_DIR, "architecture.pdf"))
