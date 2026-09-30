@@ -120,7 +120,7 @@ python LeakyTanke.py
 # Offline trainer (makes real, billed DeepSeek API calls)
 python train_supervisor.py [num_trials]        # single-tank
 python train_supervisor_two_tank.py [num_trials]  # two-tank
-python train_supervisor_four_tank.py [num_generations] [--effort low|high|max]  # PC-Gym four-tank, 4 candidates/generation
+python train_supervisor_four_tank.py [num_generations] [--effort none|low|high|max] [--run NAME]  # PC-Gym four-tank, 4 candidates/generation; --run keeps a separate experiment seeded from gen_0
 python train_supervisor_four_tank.py --report      # four-tank report only, no API calls
 touch STOP_TRAINING                                # four-tank: stop cleanly after the current generation
 

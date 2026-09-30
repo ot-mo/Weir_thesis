@@ -1,7 +1,9 @@
 """Layer 3 for the PC-Gym four-tank MIMO testbed: offline DeepSeek-driven
 heuristic learner for the four-tank supervisor.
 
-Run manually: python train_supervisor_four_tank.py [num_generations] [--effort low|high|max]
+Run manually: python train_supervisor_four_tank.py [num_generations] [--effort none|low|high|max] [--run NAME]
+(--run NAME keeps a separate experiment - its own candidates, lessons and
+logs, seeded from gen_0 - alongside the default run.)
 
 Mirrors train_supervisor_two_tank.py's structure (elitist hill-climb,
 security-check gate, fixed scenario battery, held-out validation, context
@@ -46,7 +48,9 @@ client = OpenAI(
     base_url="https://api.deepseek.com",
 )
 
-SUPERVISORS_DIR = "generated_supervisors_four_tank"
+BASE_SUPERVISORS_DIR = "generated_supervisors_four_tank"
+SEED_SUPERVISOR_PATH = os.path.join(BASE_SUPERVISORS_DIR, "supervisor_gen_0.py")
+SUPERVISORS_DIR = BASE_SUPERVISORS_DIR
 CURRENT_SUPERVISOR_PATH = os.path.join(SUPERVISORS_DIR, "current_supervisor.py")
 RESULTS_DIR = "results"
 FAILURE_POINTS_PATH = os.path.join(RESULTS_DIR, "failure_points_four_tank.jsonl")
@@ -66,6 +70,9 @@ CANDIDATES_PER_GENERATION = 4
 # 8 of 15 replies came back empty; "low" averaged ~28k with none empty, and
 # its generation still reached the perfect-detection floor.
 REASONING_EFFORT_DEFAULT = "low"  # DeepSeek's own default is "high"; "max" also exists
+# --effort none switches thinking off entirely. Temperature only has an effect
+# then, and must be non-zero or the parallel candidates come out identical.
+NON_THINKING_TEMPERATURE = 1.0
 # Create this file to stop cleanly after the current generation. Killing the
 # process instead leaves already-sent requests running and billed on
 # DeepSeek's side.
@@ -455,7 +462,7 @@ def call_deepseek(prompt, reasoning_effort=REASONING_EFFORT_DEFAULT, max_retries
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
-                reasoning_effort=reasoning_effort,
+                **_thinking_kwargs(reasoning_effort),
             )
         except Exception as e:
             print(f"[DEEPSEEK API ERROR - Attempt {attempt}/{max_retries}]: {e}")
@@ -479,6 +486,12 @@ def call_deepseek(prompt, reasoning_effort=REASONING_EFFORT_DEFAULT, max_retries
             time.sleep(1.0 * attempt)
     print(f"[CRITICAL] All {max_retries} retries failed for this call.")
     return None, usage_per_attempt
+
+
+def _thinking_kwargs(reasoning_effort):
+    if reasoning_effort == "none":
+        return {"extra_body": {"thinking": {"type": "disabled"}}, "temperature": NON_THINKING_TEMPERATURE}
+    return {"reasoning_effort": reasoning_effort}
 
 
 def _usage(response):
@@ -565,6 +578,29 @@ def find_scenario_regression(best_traces, cand_traces):
         if c["score"] > b["score"] + allowed:
             return b["scenario"], b["score"], c["score"]
     return None
+
+
+def _use_run(run_name):
+    """Points every output path at a separate named run, so an ablation (e.g.
+    --effort none) starts from gen_0 with its own candidates, lessons learned
+    and logs instead of inheriting another run's. Seeds the run with gen_0 the
+    first time."""
+    global SUPERVISORS_DIR, CURRENT_SUPERVISOR_PATH, FAILURE_POINTS_PATH, TRIALS_PATH
+    global CONTEXT_REPORT_PATH, SUMMARY_CSV_PATH, FINAL_REPORT_PATH
+    SUPERVISORS_DIR = os.path.join(BASE_SUPERVISORS_DIR, run_name)
+    CURRENT_SUPERVISOR_PATH = os.path.join(SUPERVISORS_DIR, "current_supervisor.py")
+    suffix = f"four_tank_{run_name}"
+    FAILURE_POINTS_PATH = os.path.join(RESULTS_DIR, f"failure_points_{suffix}.jsonl")
+    TRIALS_PATH = os.path.join(RESULTS_DIR, f"supervisor_training_trials_{suffix}.jsonl")
+    CONTEXT_REPORT_PATH = os.path.join(RESULTS_DIR, f"context_report_{suffix}.jsonl")
+    SUMMARY_CSV_PATH = os.path.join(RESULTS_DIR, f"summary_{suffix}.csv")
+    FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, f"final_report_{suffix}.md")
+    os.makedirs(SUPERVISORS_DIR, exist_ok=True)
+    if not os.path.exists(CURRENT_SUPERVISOR_PATH):
+        with open(SEED_SUPERVISOR_PATH, "r", encoding="utf-8") as src, \
+                open(CURRENT_SUPERVISOR_PATH, "w", encoding="utf-8") as dst:
+            dst.write(src.read())
+        print(f"[RUN] new run '{run_name}' seeded with {SEED_SUPERVISOR_PATH}")
 
 
 def _next_trial_start():
@@ -708,12 +744,16 @@ def _evaluate_candidate(response, usage, candidate, gen_idx):
 
 
 def main():
+    option = lambda name, default: sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
+    run_name = option("--run", None)
+    if run_name:
+        _use_run(run_name)
     if "--report" in sys.argv:
         generate_report()
         return
 
     num_generations = next((int(a) for a in sys.argv[1:] if a.isdigit()), 4)
-    effort = sys.argv[sys.argv.index("--effort") + 1] if "--effort" in sys.argv else REASONING_EFFORT_DEFAULT
+    effort = option("--effort", REASONING_EFFORT_DEFAULT)
     start_gen = _next_trial_start()
 
     with open(CURRENT_SUPERVISOR_PATH, "r", encoding="utf-8") as f:
