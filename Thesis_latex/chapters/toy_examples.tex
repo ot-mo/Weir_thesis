@@ -1,0 +1,209 @@
+\chapter{Toy examples}
+\label{ch:toy}
+The approach was developed on three simulated processes of increasing
+difficulty, all with leaks as the fault type. Scores are comparable within a
+process but not between processes, since the scenarios and weights differ.
+Table~\ref{tab:summary} summarizes the results. All numbers in this chapter
+are re-evaluated with the final scoring rules of each process.
+
+\begin{table}[tb]
+  \centering
+  \caption{Average score $J$ (lower is better) with PID control only and with
+    the best generated supervisor. For the quadruple-tank process the best
+    supervisor equals the perfect-detection oracle.}
+  \label{tab:summary}
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    & \multicolumn{2}{c}{Development} & \multicolumn{2}{c}{Held-out} \\
+    \cmidrule(lr){2-3}\cmidrule(l){4-5}
+    Process & PID only & Supervisor & PID only & Supervisor \\
+    \midrule
+    Single tank      & 31\,133 & 7\,551 & 30\,945 & 10\,487 \\
+    Two-tank cascade & 30\,775 & 8\,720 & 35\,274 & 13\,744 \\
+    Quadruple tank   & 64\,865 & 2\,635 & 69\,569 &  2\,609 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Single tank}
+\label{sec:single}
+\paragraph{Setup.} One tank with a pump controlled by a PID loop
+($K_p = 2$, $K_i = 0.5$, $K_d = 0.1$) at a sample time of 0.1~s, and an
+unmeasured leak as the fault. The supervisor decides every 3~s on the last
+30 samples of a 30~s episode. The development battery has eight scenarios:
+fault-free, a standard leak, an early severe leak, a late mild leak, two
+leaks that start and stop, and a fault-free and a leaking scenario with
+sensor noise. The held-out battery has the same types with other parameters.
+
+\paragraph{Results.} Of 62 trials, 16 were promoted. The final supervisor
+reduced the development score by 76\% and the held-out score by 66\%
+compared with PID alone. Its remaining cost is dominated by false positives:
+across the development battery it has 192 false-positive samples against 34
+missed ones, and one of its decisions in the fault-free scenario is a false
+alarm.
+
+\paragraph{Findings.} Early supervisors lowered the setpoint during a fault
+and never raised it again, which led to the restoration term $R_s$ in
+\eqref{eq:score}; the false-positive weight was also tuned during this
+example. The held-out score was 39\% worse than the development score, a
+first sign that the search fits the timing of the visible scenarios.
+
+\section{Two-tank cascade}
+\label{sec:two}
+\paragraph{Setup.} Tank~1 drains by gravity into tank~2, and each tank has
+its own pump and PID loop with the same gains as above. A leak in tank~1
+alone moves the level of tank~2 by more than 2~m, so the supervisor must tell
+propagated disturbances from genuine faults. The development battery has
+eight scenarios: fault-free, a leak in either tank, simultaneous leaks,
+severe persistent leaks in either tank, and a fault-free and a leaking
+scenario with sensor noise.
+
+\paragraph{Results.} Of 58 trials, 7 were promoted and 10 were rejected by
+the regression guard: each improved the average score while making one
+scenario much worse. The final supervisor reduced the development score by
+72\% and the held-out score by 61\%. The held-out score was 58\% worse than
+the development score.
+
+\paragraph{Findings.} This example exposed specification gaming: a candidate
+improved the average score by flagging anomalies almost constantly. A false
+positive cost the same in the fault-free scenario as anywhere else, and the
+loss there was outweighed by fewer missed anomalies elsewhere. This led to the
+asymmetric false-positive cost and the per-scenario regression guard in
+Section~\ref{sec:scoring}. The most instructive lesson recorded by the LLM was
+that the supervisor's own mitigation corrupted its detection statistic.
+Lowering the setpoint of a leaking tank lowers the pump effort needed to hold
+it, so an effort-based detector saw the fault disappear, cleared the flag,
+restored the setpoint and then detected the fault again. The resulting
+oscillation showed up as matched bursts of missed anomalies and false
+positives in every single-fault scenario. The LLM removed it by normalizing
+the pump effort with the tank's own level, which makes the statistic
+insensitive to setpoint changes. It also learned to separate propagated from
+genuine downstream faults with a residual test: the excess effort in tank~2
+minus a coupling gain times the excess effort in tank~1. Simultaneous faults
+remained unsolved: every candidate that improved them lost robustness to
+sensor noise, and consecutive trials often repeated nearly identical
+proposals.
+
+\section{Quadruple-tank process}
+\label{sec:four}
+\paragraph{Setup.} The quadruple-tank process \cite{johansson2000} from the
+PC-Gym benchmark suite \cite{bloor2024pcgym} has four tanks and two pumps.
+Each pump feeds one lower tank directly and, through a split valve, the upper
+tank above the other lower tank. With the split fractions
+$\gamma_1 = \gamma_2 = 0.2$, most of each pump's flow takes the delayed path,
+which gives a non-minimum-phase process. Only the two lower levels are
+measured. The model is integrated with the explicit Euler method at a 1~s
+step over 600~s episodes. A leak multiplies the outlet area of a lower tank
+by 1.8--4. There are six development and six held-out scenarios, and the
+supervisor decides every 10~s on the last 50~s of telemetry.
+
+\subsection{A plateau caused by the test bed}
+The first training runs stalled at $J \approx 36\,300$. Analysis showed
+three defects in the test bed rather than a limit of the search:
+\begin{enumerate}
+\item \emph{Faults were never applied.} They were injected through PC-Gym's
+  environment wrapper, which silently integrated an unmodified copy of the
+  model, so the first twenty or so trials ran without any faults. The model
+  is now integrated directly.
+\item \emph{Decision interval.} The supervisor decided only every 50~s, the
+  same as its window length, and every development fault started on that
+  grid. Each fault event therefore cost at least 51 missed and 51
+  false-positive samples, however good the detector was. With decisions
+  every 10~s on the same 50~s window, the unchanged champion's score fell
+  from 36\,300 to 26\,323.
+\item \emph{Loop pairing.} The relative gain of the diagonal pairing is
+  \begin{equation*}
+    \lambda = \frac{\gamma_1\gamma_2}{\gamma_1+\gamma_2-1} = -0.07 ,
+  \end{equation*}
+  so the loops should be paired off-diagonally \cite{johansson2000}. With the
+  diagonal pairing, a leak in tank~1 saturated pump~1, whose flow mostly
+  reaches tank~2; loop~2 then reduced pump~2 and drained tank~3, which is
+  tank~1's main supply. The resulting 171 safety violations in the severe
+  tank-1 scenario made up 39\% of the average score, and a grid search showed
+  that no setpoint policy could remove them. After re-pairing and retuning
+  the loops as PI controllers ($K_p = 40$, $K_i = 0.3$), PID control alone
+  gave no violations in any scenario.
+\end{enumerate}
+At the plateau, the champion was within about 7\% of the best score any
+supervisor could reach on the flawed test bed. Computing such a bound before
+interpreting a plateau would have revealed the problem much earlier.
+
+\subsection{Results after the corrections}
+Table~\ref{tab:four} shows the corrected test bed. The best supervisors flag
+every leak at the first decision after it starts and clear the flag at the
+first decision after it stops, which gives exactly the oracle's number of
+missed and false-positive samples in all twelve scenarios. Three insights
+appear in their code and lessons: the loop regulating a leaking tank
+saturates at the 12~V pump limit, and this is the one signature that the
+supervisor's own setpoint reduction cannot hide; a falling level together
+with an error above the healthy maximum reveals a leak several seconds
+before saturation; and the rate at which a level rises separates the slow
+creep of a leaking tank from refilling after a leak has stopped.
+
+\begin{table}[tb]
+  \centering
+  \caption{Quadruple-tank process after the test-bed corrections.}
+  \label{tab:four}
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    Supervisor & Development & Held-out \\
+    \midrule
+    PID only (and the seed supervisor)          & 64\,865 & 69\,569 \\
+    Plateau champion, not retrained             & 10\,777 & 14\,941 \\
+    Best generated (low reasoning, generation 2) &  2\,635 &  2\,609 \\
+    Perfect-detection oracle                    &  2\,635 &  2\,609 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Effect of LLM reasoning}
+The same search was run from the seed supervisor with three reasoning
+settings (Figure~\ref{fig:reasoning} and Table~\ref{tab:reasoning}). With
+high and low reasoning the search matched the oracle on both batteries within
+three and two generations, respectively, and the held-out scores followed the
+development scores. Without reasoning the search improved quickly at first
+but stalled at 11\,837 from the third generation on, about 4.5 times the
+oracle score. Three weaknesses stood out without reasoning: it missed 49--83
+samples in each scenario with a mild leak, against 4--12 with reasoning; its lessons contained
+incorrect physics, for example that a leak lowers the other loop's effort
+through a shared outflow path that does not exist; and three of twelve
+candidates in generations 4--6 called a built-in function that the sandbox
+does not provide, after the prompt's list of allowed functions ended in
+``etc.''. The list is now generated from the sandbox itself. With high
+reasoning, 8 of 15 requests returned an empty response that was still
+billed.
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=\textwidth]{four_tank_reasoning_comparison}
+  \caption{Score of the champion after each generation for three reasoning
+    settings, on the development and held-out batteries (log scale). Dots
+    are individual candidates; the three near $7\cdot 10^5$ crashed on every
+    call. Generation~0 is the seed supervisor. The high-reasoning run used
+    low reasoning in its third generation and an earlier, longer prompt in
+    its first two.}
+  \label{fig:reasoning}
+\end{figure}
+
+\begin{table}[tb]
+  \centering
+  \caption{Cost of reaching the oracle with different reasoning settings
+    (DeepSeek off-peak prices, US dollars).}
+  \label{tab:reasoning}
+  \begin{tabular}{@{}lccc@{}}
+    \toprule
+    Reasoning & Generations & Output tokens & Cost \\
+              & to oracle   & per request   & to oracle \\
+    \midrule
+    High & 3 & $\approx 61\,000$ & $\approx 0.63$ \\
+    Low  & 2 & $\approx 23\,000$ & $\approx 0.11$ \\
+    None & not reached in 6 & $\approx 2\,000$ & -- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Each setting was run only once, and the runs differ slightly in their
+prompts as noted in Figure~\ref{fig:reasoning}. The results therefore support
+the conclusion that reasoning is needed and that low reasoning is enough for
+this task, but not a precise ranking of low against high reasoning.
+\TODO{Repeat each setting two or three times with the final prompt.}

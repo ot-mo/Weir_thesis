@@ -1,0 +1,50 @@
+\chapter{Background}
+\label{ch:background}
+
+\section{Supervisory process control}
+Industrial processes are usually controlled hierarchically. Fast PID loops at
+the base layer keep individual variables at their setpoints, while a slower
+supervisory layer chooses those setpoints, coordinates interacting loops and
+reacts to abnormal situations \cite{astrom2011,pomerleau2000}. In a
+multivariable process, the pairing of manipulated and controlled variables
+in the base layer matters: the relative gain array \cite{bristol1966} shows
+whether a decentralized pairing will work with or against the process
+interactions.
+\TODO{Expand with the supervisory structure used in grinding circuits and at Weir.}
+
+\section{Fault detection}
+A supervisor must decide from measurements alone whether a fault is present.
+Model-based fault detection compares measured behaviour with what a process
+model predicts for the fault-free case and raises an alarm when the residual
+is large enough \cite{isermann2006}. The trade-off between missed detections,
+false alarms and detection delay is central, and it is reflected directly in
+the scoring used in this thesis (Section~\ref{sec:scoring}).
+\TODO{Expand with residual generation and evaluation, and threshold selection.}
+
+\section{LLM-guided program search}
+FunSearch \cite{romeraparedes2024funsearch} pairs an LLM with an automated
+evaluator in an evolutionary loop: the LLM proposes programs, the evaluator
+scores them, and the best programs are used as context for new proposals.
+AlphaEvolve \cite{novikov2025alphaevolve} scales the same idea into a general
+coding agent and reports that removing the rich problem context from the
+prompt is among the most harmful ablations. Eureka \cite{ma2024eureka} uses an
+LLM to write reward functions for reinforcement learning and feeds numeric
+results back in a reflection step. \textcite{weng2026lbg} describes an
+iterative workflow in which a policy is improved by inspecting execution
+traces and rewriting code instead of through gradient updates. This thesis applies the
+pattern to supervisory control, where the evaluator is a closed-loop
+simulation with fault injection.
+
+\section{Learned controllers}
+TD-MPC \cite{hansen2022tdmpc} and TD-MPC2 \cite{hansen2024tdmpc2} learn a
+latent world model, plan over a short horizon in that model and bootstrap
+long-horizon value with temporal-difference learning. They are the learned,
+black-box side of the comparison in this thesis.
+\TODO{Summarize what TD-MPC can do that a readable rule set cannot, and vice versa.}
+
+\section{Specification gaming}
+An optimizer that is scored by a metric will exploit weaknesses in that
+metric \cite{amodei2016,krakovna2020}. LLM-guided search is no exception: in
+this work, candidates repeatedly found ways to improve the average score
+while behaving worse, which motivated the safeguards in
+Section~\ref{sec:scoring}.

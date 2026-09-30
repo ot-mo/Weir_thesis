@@ -1,0 +1,123 @@
+\chapter{Method}
+\label{ch:method}
+
+\section{Three-layer architecture}
+The control system is split into three layers (Figure~\ref{fig:architecture}).
+Layer~1 consists of fixed PID or PI loops that track the active setpoints at
+every sample; they are never generated or modified by the LLM. Layer~2 is a
+deterministic supervisor, a plain Python function that runs at a slower
+decision interval, inspects a window of recent telemetry and returns anomaly
+flags and adjusted setpoints. Layer~3 is the LLM-driven learner. It runs
+offline and manually, never inside the control loop, and its only output is
+new source code for Layer~2. The LLM's cost, latency and reliability therefore
+never affect the real-time loop.
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=\textwidth]{architecture}
+  \caption{The three-layer architecture. The LLM learner works offline on
+    logged results; only code that passes the security check and improves on
+    the current champion is promoted to the online supervisor.}
+  \label{fig:architecture}
+\end{figure}
+
+\section{Supervisor interface}
+Every supervisor implements the same function,
+\begin{center}
+\texttt{supervise(telemetry\_window, active\_setpoints, nominal\_targets)},
+\end{center}
+where the telemetry window holds, for each controlled tank and each sample,
+the level, the output of the loop regulating it (pump effort) and the control
+error. The function returns a free-text diagnosis, one adjusted setpoint per
+loop (clamped to an allowed range) and one boolean anomaly flag per loop. It
+is stateless: it is reloaded for every run and sees only its arguments.
+The returned flags are held until the next decision.
+
+\section{Security sandbox}
+Generated code is treated as untrusted and passes three checks before it runs
+on any telemetry:
+\begin{enumerate}
+\item a static check of the abstract syntax tree that rejects imports,
+  \texttt{exec}, \texttt{eval}, file and network access, access to dunder
+  attributes, oversized sources and anything other than a single top-level
+  \texttt{supervise} function with the required signature;
+\item execution in a namespace with an explicit whitelist of built-in
+  functions and the \texttt{math} and \texttt{statistics} modules, instead of
+  Python's real built-ins;
+\item a wall-clock timeout on every call (0.5~s), so that an infinite loop
+  cannot stall the simulation.
+\end{enumerate}
+An exception or timeout during evaluation is recorded as a failure, the
+setpoints are held and both anomaly flags are raised.
+
+\section{Evaluation and scoring}
+\label{sec:scoring}
+Each candidate is simulated in closed loop on a fixed \emph{development}
+battery of fault scenarios: a fault-free run, single leaks of different onset,
+size and duration, simultaneous leaks, persistent severe leaks and, for the
+single- and two-tank processes, sensor noise. For a scenario $s$ the score is
+\begin{equation}
+  J_s = \mathrm{IAE}_s + 500\,V_s + 300\,M_s + c_{\mathrm{FP}}\,F_s
+        + 10^4\,E_s + 200\,R_s ,
+  \label{eq:score}
+\end{equation}
+where $\mathrm{IAE}_s$ is the integrated absolute tracking error of all
+loops, $V_s$ the number of samples outside the safety bounds, $M_s$ and $F_s$
+the number of samples, summed over loops, in which a held anomaly flag
+disagrees with the true fault state (missed anomalies and false positives),
+$E_s$ the number of exceptions and timeouts, and $R_s$ the distance between
+the final and the nominal setpoints for loops whose fault has cleared. The
+battery score $J$ is the average of $J_s$ over the scenarios; lower is
+better.
+
+Early candidates found several ways to improve $J$ while behaving worse,
+which led to three safeguards:
+\begin{itemize}
+\item \emph{Asymmetric false-positive cost.} A false positive on a loop that
+  never faults in the scenario costs $c_{\mathrm{FP}} = 800$ (250 on the
+  quadruple-tank process); otherwise $c_{\mathrm{FP}} = 160$. Without this,
+  flagging constantly was a cheap way to avoid missed anomalies.
+\item \emph{Per-scenario regression guard.} A candidate is promoted only if it
+  improves $J$ \emph{and} no single scenario gets worse than the champion by
+  more than 5 points (fault-free scenario) or the larger of 100 points and
+  15\% (fault scenarios). Averaging otherwise let a candidate win by breaking
+  one scenario badly.
+\item \emph{Held-out battery.} A second battery with the same scenario types
+  but different fault timing and magnitude is never used for promotion. Its
+  score is reported to the LLM only as a generalization gap.
+\end{itemize}
+For the quadruple-tank process an \emph{oracle} is also evaluated. It sets
+each flag to the true fault state at every decision and keeps the nominal
+setpoints, which is the best detection possible at the given decision
+interval. It gives a lower bound that makes it possible to tell whether a
+plateau is caused by the search or by the test bed.
+
+\section{Training loop}
+Each generation of the Layer-3 learner performs the following steps.
+\begin{enumerate}
+\item Build a prompt. The part that is the same in every call contains a
+  description of the process at the level a plant engineer would know it
+  (layout, mass balances, parameters, loop pairing, operating point and fault
+  types), measured statistics of healthy operation, the calling contract, the
+  exact list of allowed built-in functions, the scoring rules, the task and
+  the output format. The part that changes contains the champion's source
+  code, its per-scenario results, one line per decision for its two
+  worst-scoring scenarios (true fault state against returned flags, errors,
+  pump efforts and setpoints), a summary of the previous generation's
+  rejected candidates, and a list of lessons learned.
+\item Sample $K$ candidates from the LLM in parallel. Each response is a JSON
+  object with a failure analysis, a numeric self-check of the thresholds
+  against the healthy statistics, the new code and at most two new lessons
+  of at most 30 words each.
+\item Check, load and score every candidate, and promote the best one that
+  passes the regression guard.
+\end{enumerate}
+The quadruple-tank experiments use DeepSeek's \texttt{deepseek-flash} model
+through its API, with a configurable reasoning effort (none, low or high),
+and the full loop with $K=4$. The loop was built up incrementally: the
+single- and two-tank experiments used an earlier version with one candidate
+per trial ($K=1$), aggregate failure counts instead of decision traces and
+only a short qualitative description of the process, and they were run while
+the setup was still changing, with more than one DeepSeek model.
+An example of a generated supervisor is given in Appendix~\ref{app:supervisor}.
+\TODO{State the prompt size (about 6\,500 tokens on the quadruple-tank process).}

@@ -1,0 +1,3 @@
+# Keep line-ending conversion away from the logos and figures.
+*.eps binary
+*.pdf binary

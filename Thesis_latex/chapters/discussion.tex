@@ -1,0 +1,64 @@
+\chapter{Discussion}
+\label{ch:discussion}
+
+\section{The evaluation matters as much as the model}
+On all three processes, the largest improvements came from changes to the
+evaluation, not to the model. The search exploited every weakness in the
+score that it could find: constant flagging, breaking one scenario to win on
+average, and fitting the timing of the visible scenarios. On the
+quadruple-tank process, a long plateau turned out to be caused by the test
+bed itself: faults that were never applied, a decision interval that fixed
+a floor on the score, and a base-layer pairing that made one scenario
+impossible. A perfect-detection oracle exposed the last two immediately
+once it was computed. Checking that the test bed is sound, and bounding what
+is achievable, should come before interpreting the progress of the search.
+
+\section{What the LLM needs}
+Progress on the quadruple-tank process was much faster after the prompt
+gained a plant-engineer-level description of the process and per-decision
+traces of the champion's worst scenarios. This agrees with AlphaEvolve and
+Eureka, where removing problem context or result feedback degraded the
+search \cite{novikov2025alphaevolve,ma2024eureka}. Sampling several
+candidates per generation also mattered: the candidates of one generation
+often differed in score by a factor of two or more.
+\TODO{Quantify this with an ablation of the process description and the traces.}
+
+\section{Reasoning}
+Without reasoning, the LLM made steady early progress at about a
+twenty-fifth of the cost, but then stalled, wrote physically incorrect
+lessons and made avoidable coding mistakes. Because lessons are shown to
+later generations as constraints, an incorrect lesson can keep steering the
+search in the wrong direction. Low reasoning was enough to reach the oracle
+and was about six times cheaper than high reasoning, which also produced
+many empty, billed responses.
+
+\section{Interpretability}
+Every champion is a single Python function of 43 to 210 lines with named
+thresholds and a diagnosis string for each decision. The supervisor that
+matched the oracle on the quadruple-tank process
+(Appendix~\ref{app:supervisor}) has 43 lines and flags a tank when any of
+three conditions on the last 10~s holds: the level is falling while the error
+is large; the loop's effort is above the healthy maximum while the error is
+large and the level is not recovering; or the pump is close to saturation
+and the level is not rising quickly. An engineer can read, test and modify
+such a function, and the security sandbox guarantees that it cannot import
+modules, touch files or run indefinitely. This is the main advantage over a
+learned black-box controller.
+\TODO{Discuss how interpretable the longer single- and two-tank supervisors are in practice.}
+
+\section{Limitations}
+\begin{itemize}
+\item The processes are small simulations with a single fault type (leaks),
+  and the quadruple-tank process has noise-free measurements.
+\item Each configuration was trained once; the search is stochastic, so
+  repeated runs are needed for firm conclusions.
+\item The batteries are small (six to eight scenarios each), and the single-
+  and two-tank supervisors generalized noticeably worse to the held-out
+  scenarios.
+\item The tracking error is measured against the active setpoint, so a
+  supervisor can reduce it slightly by lowering the setpoint of a leaking
+  tank without improving the process. On the quadruple-tank process this is
+  worth about 10 points per scenario.
+\item No comparison with TD-MPC or any other learned controller has been made
+  yet.
+\end{itemize}

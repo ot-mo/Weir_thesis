@@ -1,0 +1,43 @@
+\documentclass{LTHthesis}
+%\documentclass[svenska]{LTHthesis} % Use this line instead if the thesis is written in Swedish.
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx, helvet}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+
+\addbibresource{references.bib}
+
+% Marks text that is still to be written. Search for \TODO before submission.
+\newcommand{\TODO}[1]{\textbf{[TODO: #1]}}
+
+\begin{document}
+\begin{titlepages}
+\author{Otto M\"orner}
+\title{An LLM as an Offline Heuristic Learner\\ for Interpretable Supervisory\\ Process Control} % Working title
+\year{2026}      % TODO: year of submission
+\month{\TODO{month}}
+\TFRT{9999}      % You will get the number from the department.
+\printer{Media-Tryck}  % Probably. You may get other information from the department.
+\end{titlepages}
+
+\chapter*{Abstract}
+\input{chapters/abstract}
+
+\chapter*{Acknowledgements}
+\TODO{Thank the supervisors at Weir and at the Department of Automatic Control, the examiner, and others who helped.}
+
+\tableofcontents
+
+\input{chapters/introduction}
+\input{chapters/background}
+\input{chapters/method}
+\input{chapters/toy_examples}
+\input{chapters/discussion}
+\input{chapters/conclusions}
+
+\printbibliography
+
+\appendix
+\input{chapters/appendix_supervisor}
+\end{document}

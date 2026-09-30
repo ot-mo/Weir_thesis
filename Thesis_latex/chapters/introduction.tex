@@ -1,0 +1,59 @@
+\chapter{Introduction}
+\label{ch:introduction}
+
+\section{Motivation}
+Mineral processing circuits such as grinding mills are multivariable, strongly
+coupled and subject to frequent disturbances \cite{pomerleau2000}. They are
+typically run with decentralized PID loops at the base layer and a supervisory
+layer on top that coordinates setpoints and handles abnormal situations.
+Learned controllers such as TD-MPC \cite{hansen2022tdmpc,hansen2024tdmpc2}
+can perform well in this role, but their behaviour is encoded in neural
+networks, which makes it hard for engineers to inspect, verify and certify
+what the controller will do in situations it has not seen.
+\TODO{Describe the industrial setting at Weir: the process, the current TD-MPC controller and why interpretability and auditability matter there.}
+
+Recent work has shown that large language models (LLMs) can act as the
+mutation operator in an evolutionary search over \emph{programs}, with an
+automated evaluator as the only judge of quality
+\cite{romeraparedes2024funsearch,novikov2025alphaevolve,ma2024eureka,weng2026lbg}.
+The result of such a search is ordinary source code that can be read,
+reviewed and tested like any other code. This thesis asks whether that idea
+can produce supervisory control logic of practical quality.
+
+\section{Research questions}
+\begin{enumerate}
+\item Can an LLM, used offline as a heuristic learner, generate deterministic,
+  security-checked supervisory control code that performs close to a learned
+  controller such as TD-MPC while remaining interpretable?
+\item What information does the LLM need about the process, the evaluation and
+  earlier attempts to make steady progress?
+\item How must the evaluation be designed so that the search improves the
+  intended behaviour rather than exploiting the score?
+\item How much LLM reasoning is needed, and what does it cost?
+\end{enumerate}
+\TODO{Refine the research questions together with the supervisors.}
+
+\section{Approach and contributions}
+The work uses a three-layer architecture (Chapter~\ref{ch:method}): fixed PID
+loops at the bottom, a deterministic supervisor function in the middle, and an
+offline LLM-driven learner at the top that rewrites the supervisor between
+runs. The approach is developed and evaluated on three toy processes of
+increasing difficulty (Chapter~\ref{ch:toy}) before it is applied to the
+industrial process. The contributions so far are:
+\begin{itemize}
+\item an implementation of the three-layer architecture with a security
+  sandbox for generated code and a scoring scheme with safeguards against
+  specification gaming;
+\item results on a single tank, a two-tank cascade and the quadruple-tank
+  process, including a comparison with a perfect-detection oracle;
+\item an ablation of the LLM's reasoning effort on the quadruple-tank process.
+\end{itemize}
+\TODO{Add the industrial case study and the comparison with TD-MPC.}
+
+\section{Outline}
+Chapter~\ref{ch:background} gives background on supervisory process control,
+fault detection and LLM-guided program search. Chapter~\ref{ch:method}
+describes the architecture, the security sandbox, the scoring and the training
+loop. Chapter~\ref{ch:toy} presents the three toy examples and their results.
+Chapter~\ref{ch:discussion} discusses the findings and their limitations, and
+Chapter~\ref{ch:conclusions} concludes.

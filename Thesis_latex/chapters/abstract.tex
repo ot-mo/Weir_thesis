@@ -1,0 +1,24 @@
+% Draft abstract based on the toy-example results; revise once the industrial
+% comparison is done.
+Advanced process controllers based on learned models, such as TD-MPC, can
+perform well but are hard to inspect, verify and audit. This thesis
+investigates an alternative in which a large language model (LLM) is used
+\emph{offline} as a heuristic learner: it reads logs, scores and decision
+traces from a simulated process and writes a small, deterministic supervisory
+function in Python. The function runs on top of fixed PID loops, raises
+per-loop anomaly flags and adjusts setpoints. Every candidate passes a static
+security check and a sandboxed evaluation on a battery of fault scenarios, and
+is only promoted if it improves on the current champion without regressing
+any single scenario.
+
+The approach is developed on three toy processes of increasing difficulty: a
+single leaking tank, a two-tank cascade, and the quadruple-tank process. On
+all three, the generated supervisors reduced the score on the development
+scenarios by 72--96\% compared with PID control alone. On the quadruple-tank process, supervisors
+generated with LLM reasoning enabled matched a perfect-detection oracle on
+both the development and the held-out scenarios within two to three
+generations, whereas the same search without reasoning stagnated at about
+4.5 times the oracle score. The experiments also show that the design of the
+evaluation, including safeguards against specification gaming and checks that
+the test bed itself is sound, matters as much as the choice of model.
+\TODO{Add the result of the comparison on the industrial process and against TD-MPC.}

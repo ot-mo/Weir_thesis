@@ -1,0 +1,25 @@
+\chapter{Conclusions and future work}
+\label{ch:conclusions}
+
+\section{Conclusions}
+An LLM used offline as a heuristic learner produced deterministic,
+security-checked supervisors that reduced the development score by
+72--96\% compared with PID control alone on three toy processes. On the
+quadruple-tank process, the generated supervisor matched a perfect-detection
+oracle on both development and held-out scenarios within two generations,
+with low reasoning effort and at a cost of about 0.11 US dollars. Reaching
+this required a sound test bed and a score protected against specification
+gaming, and it required some LLM reasoning: without it the search stalled
+well above the oracle.
+\TODO{Answer the research questions once the industrial study is done.}
+
+\section{Future work}
+\begin{itemize}
+\item Apply the method to the industrial process and data at Weir and
+  compare it with the TD-MPC controller in use there.
+\item Make the toy benchmark harder: sensor noise and model mismatch on the
+  quadruple-tank process, other fault types such as pump wear and sensor
+  drift, and tracking error measured against the nominal setpoint.
+\item Repeat each configuration several times, and ablate the process
+  description and the decision traces.
+\end{itemize}
