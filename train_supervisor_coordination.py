@@ -63,11 +63,12 @@ MAX_RELATION_WORDS = 30
 CANDIDATES_PER_GENERATION = 4
 REASONING_EFFORT_DEFAULT = "low"  # see train_supervisor_four_tank.py for the measurements behind this
 # Hard cap on output tokens per reply, reasoning included. "low" effort is only
-# a preference: in the first coordination run 3 replies reasoned until the
-# default 65,536-token limit (finish_reason=length) and returned nothing.
-# Normal low-effort replies need ~25k, so 32k leaves headroom and halves what a
-# runaway reply costs before it is retried.
-MAX_OUTPUT_TOKENS = 32768
+# a preference: in the first coordination run 3 of 7 replies reasoned until the
+# default 65,536-token limit (finish_reason=length) and returned nothing. The
+# replies that succeeded needed ~43k tokens on this task (the leak task needed
+# ~25k), so a 32k cap cut off replies that would have succeeded; 48k sits
+# above that while still cutting runaways a quarter short of the default.
+MAX_OUTPUT_TOKENS = 49152
 NON_THINKING_TEMPERATURE = 1.0
 STOP_FILE = "STOP_TRAINING"
 TRACE_SCENARIOS = 2
