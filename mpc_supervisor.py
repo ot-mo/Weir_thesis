@@ -56,7 +56,8 @@ class MPCSupervisor:
         extra = np.zeros(4)
         if self.oracle_scenario is not None:
             s = self.oracle_scenario
-            t = s.window_steps + s.decision_interval_steps * (self.calls - 1)
+            # Decisions happen at t = interval, 2*interval, ... (see run_episode).
+            t = s.decision_interval_steps * self.calls * s.dt
             model = type("M", (), {})()
             d1, d2 = C._apply_disturbances(model, self.p, s, t)
             p.update(k1=model.k1, k2=model.k2, gamma_1=model.gamma_1, gamma_2=model.gamma_2)
