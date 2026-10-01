@@ -278,6 +278,18 @@ def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict
             "metrics": compute_metrics(hist, scenario, exceptions)}
 
 
+# Provisional weights for a single score (lower is better), needed later to
+# rank LLM candidates. The goal document fixes exact definitions before the
+# real tests, so these are a starting point: 1 L off target = 1, one second of
+# band or upper-limit violation = 2, one metre of setpoint travel = 100.
+SCORE_WEIGHTS = {"production_iae_l": 1.0, "band_violation_s": 2.0, "upper_violation_s": 2.0,
+                 "safety_violation_s": 10.0, "setpoint_tv_m": 100.0, "exceptions": 1000.0}
+
+
+def score(metrics):
+    return float(sum(w * metrics[k] for k, w in SCORE_WEIGHTS.items()))
+
+
 def compute_metrics(hist, scenario, exceptions=0):
     dt = scenario.dt
     q, target = np.array(hist["q"]), np.array(hist["target"])
