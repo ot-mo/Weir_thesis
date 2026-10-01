@@ -1,0 +1,5 @@
+trial,candidate,reasoning_effort,decision,score,validation_score,reason
+1,1,low,REJECTED_REGRESSION,231.54657142857144,,nominal_target_up_0 regressed 159.1 -> 242.9
+1,2,low,REJECTED_REGRESSION,433.7756428571429,,dev_feed_sine_0 regressed 305.3 -> 401.4
+1,4,low,REJECTED_SECURITY,,,import statements are not allowed
+1,3,low,PROMOTED,234.70264285714288,272.1191428571428,

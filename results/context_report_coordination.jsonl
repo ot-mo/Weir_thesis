@@ -1,0 +1,1 @@
+{"trial": 1, "relations": ["A draw-off from tank1 raises tank3 because the h1 loop pushes pump2 harder; lowering h1's setpoint and raising h2's keeps tank3 below its limit with production on target.", "Extra outflow from tank2 needs the opposite split: raise the h1 setpoint and lower h2 so pump1 works less and tank4 stays low."]}
