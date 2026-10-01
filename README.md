@@ -190,6 +190,38 @@ The gen_2 champion has zero false positives on the fault-free scenario; most
 of its remaining cost is in `both_leaks`, where one tank's leak partly masks
 the other's through the cross-coupling.
 
+## Four-tank setpoint coordination (grinding-circuit rehearsal)
+
+The thesis goal document asks how an LLM-synthesized supervisor compares with a
+model-based predictive supervisor at *coordinating setpoints under disturbances*
+(RQ1), and how both degrade beyond the development range (RQ2).
+[four_tank_coordination.py](four_tank_coordination.py) rehearses that on the
+quadruple-tank process:
+
+| Grinding circuit | Four-tank analog |
+|---|---|
+| P80 on target | production rate (tank 1 + tank 2 outflow) |
+| Sump level stable | h2 inside a band |
+| Circulating load within limits | upper-tank levels below a limit |
+| Fresh feed / ore density / % solids | feed in/outflow / pump gain / valve split disturbances |
+
+The supervisor moves only the two PI setpoints (no anomaly flags). Scenarios
+cover the goal document's factors (disturbance kind × step/ramp/sine × inside or
+beyond the development range); metrics are production IAE, constraint-violation
+time, setpoint total variation and recovery time.
+[mpc_supervisor.py](mpc_supervisor.py) is the model-based predictive baseline
+(online disturbance estimate, plus an oracle variant).
+
+```bash
+python benchmark_coordination.py [per_cell]   # fixed recipe vs MPC vs oracle MPC, no API calls
+```
+
+| Battery | Fixed recipe | MPC (estimated) | MPC (oracle) |
+|---|---|---|---|
+| Development | 448 | 183 | 171 |
+| Held-out development | 475 | 190 | 183 |
+| Beyond development range | 1,680 | 1,160 | 1,147 |
+
 ## Status / open threads
 
 - Single-tank supervisor has gone through ~60 generations; current champion
