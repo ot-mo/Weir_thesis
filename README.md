@@ -216,7 +216,7 @@ IAE, constraint-violation time, setpoint total variation and recovery time.
 
 ```bash
 python benchmark_coordination.py [per_cell]   # fixed recipe vs MPC vs oracle MPC, no API calls
-python train_supervisor_coordination.py [num_generations] [--effort low] [--run NAME]  # LLM meta-supervisor (billed)
+python train_supervisor_coordination.py [num_generations] [--model deepseek-flash|gpt-6-luna|gpt-6.1-sol] [--effort low] [--run NAME]  # LLM meta-supervisor (billed)
 python train_supervisor_coordination.py --report [--run NAME]                           # champion vs baselines, no API calls
 ```
 
