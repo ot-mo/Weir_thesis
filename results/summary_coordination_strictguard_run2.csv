@@ -1,0 +1,9 @@
+trial,candidate,reasoning_effort,decision,score,validation_score,reason
+1,1,low,REJECTED_REGRESSION,238.91899999999995,,nominal_target_up_0 regressed 159.1 -> 209.7
+1,2,low,REJECTED_REGRESSION,194.34085714285715,,nominal_target_up_0 regressed 159.1 -> 185.9
+1,3,low,REJECTED_REGRESSION,261.4082142857143,,nominal_target_up_0 regressed 159.1 -> 388.6
+1,4,low,REJECTED_REGRESSION,187.8981428571429,,nominal_target_up_0 regressed 159.1 -> 186.7
+2,1,low,REJECTED_REGRESSION,216.0912142857143,,nominal_target_up_0 regressed 159.1 -> 243.4
+2,2,low,REJECTED_REGRESSION,273.47164285714285,,dev_pump_step_0 regressed 118.6 -> 162.6
+2,3,low,REJECTED_REGRESSION,301.81157142857137,,nominal_target_up_0 regressed 159.1 -> 742.2
+2,4,low,REJECTED_REGRESSION,225.83835714285715,,nominal_target_up_0 regressed 159.1 -> 187.1
