@@ -205,10 +205,12 @@ quadruple-tank process:
 | Circulating load within limits | upper-tank levels below a limit |
 | Fresh feed / ore density / % solids | feed in/outflow / pump gain / valve split disturbances |
 
-The supervisor moves only the two PI setpoints (no anomaly flags). Scenarios
+The supervisor moves only the two PI setpoints (no anomaly flags). It is called
+every 10 s with the last 10 minutes of telemetry (levels, pump voltages,
+production, and the setpoints and target active at each sample). Scenarios
 cover the goal document's factors (disturbance kind × step/ramp/sine × inside or
-beyond the development range); metrics are production IAE, constraint-violation
-time, setpoint total variation and recovery time.
+beyond the development range, three scenarios per cell); metrics are production
+IAE, constraint-violation time, setpoint total variation and recovery time.
 [mpc_supervisor.py](mpc_supervisor.py) is the model-based predictive baseline
 (online disturbance estimate, plus an oracle variant).
 
@@ -222,14 +224,19 @@ python train_supervisor_coordination.py --report [--run NAME]                   
 the four-tank trainer (which stays as it is for the leak task): the LLM writes
 `supervise(telemetry_window, active_setpoints, objectives)`, which returns new
 setpoints only, passes the same security gate and is promoted on the development
-battery. The beyond-range battery is never shown to the LLM and only appears in the
-report, next to the baselines on identical scenarios.
+battery if it improves the average without making any disturbance type worse on
+average (or wrecking a single scenario). The beyond-range battery is never shown to
+the LLM and only appears in the report, next to the baselines on identical scenarios.
 
-| Battery | Fixed recipe | MPC (estimated) | MPC (oracle) |
+| Battery (42 / 42 / 36 scenarios) | Fixed recipe | MPC (estimated) | MPC (oracle) |
 |---|---|---|---|
-| Development | 448 | 183 | 171 |
-| Held-out development | 475 | 190 | 183 |
-| Beyond development range | 1,680 | 1,160 | 1,147 |
+| Development | 533 | 204 | 193 |
+| Held-out development | 479 | 194 | 191 |
+| Beyond development range | 1,583 | 1,124 | 1,111 |
+
+Runs on the earlier setup (50 s window, one scenario per cell, per-scenario
+guard) are archived under `window50_*`. Their best champion scores 226 / 242 /
+1,277 on these batteries.
 
 ## Status / open threads
 
