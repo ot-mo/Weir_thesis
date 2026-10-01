@@ -2,12 +2,15 @@
 meta-supervisor writes a deterministic supervise() function that only moves
 the PI setpoints, as in the goal document's grinding-circuit experiment.
 
-Run manually: python train_supervisor_coordination.py [num_generations] [--effort none|low|high|max] [--run NAME]
+Run manually: python train_supervisor_coordination.py [num_generations] [--model NAME] [--effort LEVEL] [--run NAME]
+  --model: deepseek-flash (default), gpt-6-luna or gpt-6.1-sol (OPENAI_API_KEY in .env)
+  --effort: reasoning effort, default low (DeepSeek: none|low|high|max; Luna: none|low|medium|high|xhigh|max;
+            Sol: low|medium|high|xhigh|max)
 Report only, no API calls: python train_supervisor_coordination.py --report [--run NAME]
 
 A copy of train_supervisor_four_tank.py (which stays as it is for the leak
 task) with the same loop - parallel candidates, security gate, elitist
-promotion with a per-scenario regression guard, decision traces, previous
+promotion with a per-disturbance-type regression guard, decision traces, previous
 attempts, lessons learned, stop switch, token logging - pointed at
 four_tank_coordination.py:
 - Interface: supervise(telemetry_window, active_setpoints, objectives) ->
@@ -42,6 +45,38 @@ client = OpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
 )
+_openai_client = None
+
+
+def get_openai_client():
+    """Created on first use, so DeepSeek-only runs don't need OPENAI_API_KEY."""
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return _openai_client
+
+
+MODEL_DEFAULT = "deepseek-flash"
+# OpenAI model ids, from OpenAI's model pages (checked 2026-10-01): both allow
+# 128,000 output tokens; Sol does not accept reasoning effort "none".
+OPENAI_REASONING_EFFORTS = {
+    "gpt-6-luna": ("none", "low", "medium", "high", "xhigh", "max"),
+    "gpt-6.1-sol": ("low", "medium", "high", "xhigh", "max"),
+}
+OPENAI_MAX_OUTPUT_TOKENS = 128000
+# Standard USD per 1M tokens (uncached input, cached input, output), for the
+# cost estimate in the logs and report. DeepSeek at its off-peak rate; peak
+# hours cost twice as much.
+PRICES_PER_MILLION = {
+    "deepseek-flash": (0.15, 0.003, 0.60),
+    "gpt-6-luna": (0.10, 0.01, 0.50),
+    "gpt-6.1-sol": (2.00, 0.10, 10.00),
+}
+
+
+def provider_of(model):
+    return "openai" if model.startswith("gpt-") else "deepseek"
+
 
 REQUIRED_ARGS = ("telemetry_window", "active_setpoints", "objectives")
 
@@ -417,25 +452,25 @@ Respond with the JSON object described under OUTPUT FORMAT.
 """
 
 
-def call_deepseek(prompt, reasoning_effort=REASONING_EFFORT_DEFAULT, max_retries=3):
+def call_llm(prompt, model=MODEL_DEFAULT, reasoning_effort=REASONING_EFFORT_DEFAULT, max_retries=3):
     """Returns (parsed JSON or None, token usage of every attempt that got a
     response, including unparseable ones, since those are billed too)."""
     usage_per_attempt = []
+    api = get_openai_client() if provider_of(model) == "openai" else client
     for attempt in range(1, max_retries + 1):
         try:
             time.sleep(0.3)
-            response = client.chat.completions.create(
-                model="deepseek-flash",
+            response = api.chat.completions.create(
+                model=model,
                 messages=[
                     {"role": "system", "content": "You are a control-systems engineer. Respond ONLY with valid JSON."},
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
-                max_tokens=MAX_OUTPUT_TOKENS,
-                **_thinking_kwargs(reasoning_effort),
+                **_request_kwargs(model, reasoning_effort),
             )
         except Exception as e:
-            print(f"[DEEPSEEK API ERROR - Attempt {attempt}/{max_retries}]: {e}")
+            print(f"[LLM API ERROR - Attempt {attempt}/{max_retries}]: {e}")
             time.sleep(1.0 * attempt)
             continue
         choice = response.choices[0]
@@ -446,7 +481,7 @@ def call_deepseek(prompt, reasoning_effort=REASONING_EFFORT_DEFAULT, max_retries
             return json.loads(content), usage_per_attempt
         except json.JSONDecodeError as e:
             reasoning = getattr(choice.message, "reasoning_content", None) or ""
-            print(f"[DEEPSEEK API ERROR - Attempt {attempt}/{max_retries}]: unparseable response ({e}); "
+            print(f"[LLM API ERROR - Attempt {attempt}/{max_retries}]: unparseable response ({e}); "
                   f"finish_reason={choice.finish_reason}, content_chars={len(content)}, reasoning_chars={len(reasoning)}, "
                   f"prompt_tokens={usage['prompt']}, completion_tokens={usage['completion']}, "
                   f"reasoning_tokens={usage['reasoning']}")
@@ -455,21 +490,43 @@ def call_deepseek(prompt, reasoning_effort=REASONING_EFFORT_DEFAULT, max_retries
     return None, usage_per_attempt
 
 
-def _thinking_kwargs(reasoning_effort):
+def _request_kwargs(model, reasoning_effort):
+    """Provider-specific request parameters. OpenAI's reasoning models take
+    max_completion_tokens and reasoning_effort (including "none" on Luna) and
+    no temperature; DeepSeek takes max_tokens, and switches thinking off
+    through extra_body, where temperature then matters."""
+    if provider_of(model) == "openai":
+        return {"max_completion_tokens": OPENAI_MAX_OUTPUT_TOKENS, "reasoning_effort": reasoning_effort}
     if reasoning_effort == "none":
-        return {"extra_body": {"thinking": {"type": "disabled"}}, "temperature": NON_THINKING_TEMPERATURE}
-    return {"reasoning_effort": reasoning_effort}
+        return {"max_tokens": MAX_OUTPUT_TOKENS, "extra_body": {"thinking": {"type": "disabled"}},
+                "temperature": NON_THINKING_TEMPERATURE}
+    return {"max_tokens": MAX_OUTPUT_TOKENS, "reasoning_effort": reasoning_effort}
 
 
 def _usage(response):
     u = response.usage
     details = getattr(u, "completion_tokens_details", None)
+    # DeepSeek reports cache hits as prompt_cache_hit_tokens, OpenAI as
+    # prompt_tokens_details.cached_tokens.
+    cache_hit = getattr(u, "prompt_cache_hit_tokens", None)
+    if cache_hit is None:
+        cache_hit = getattr(getattr(u, "prompt_tokens_details", None), "cached_tokens", None)
     return {
         "prompt": getattr(u, "prompt_tokens", None),
-        "cache_hit": getattr(u, "prompt_cache_hit_tokens", None),
+        "cache_hit": cache_hit,
         "completion": getattr(u, "completion_tokens", None),
         "reasoning": getattr(details, "reasoning_tokens", None),
     }
+
+
+def estimate_cost(usages, model):
+    """USD at standard (DeepSeek: off-peak) rates; None for an unknown model."""
+    if model not in PRICES_PER_MILLION:
+        return None
+    price_in, price_cached, price_out = PRICES_PER_MILLION[model]
+    s = _sum_usage(usages)
+    return ((s["prompt"] - s["cache_hit"]) * price_in + s["cache_hit"] * price_cached
+            + s["completion"] * price_out) / 1e6
 
 
 def _sum_usage(usages):
@@ -498,11 +555,12 @@ def save_candidate_only(candidate_code, gen_idx, candidate):
 
 
 def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, reason=None, validation_score=None,
-              self_check=None, candidate=None, reasoning_effort=None, usage=None):
+              self_check=None, candidate=None, reasoning_effort=None, usage=None, model=None):
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(TRIALS_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps({
-            "trial": trial_idx, "candidate": candidate, "reasoning_effort": reasoning_effort, "usage": usage,
+            "trial": trial_idx, "candidate": candidate, "model": model, "reasoning_effort": reasoning_effort,
+            "usage": usage,
             "decision": decision, "score": score, "validation_score": validation_score,
             "failure_analysis": failure_analysis, "self_check": self_check,
             "proposed_change": proposed_change, "reason": reason,
@@ -635,19 +693,22 @@ def generate_report():
     for decision, count in sorted(decision_counts.items(), key=lambda kv: -kv[1]):
         lines.append(f"  - {decision}: {count}")
 
-    usage_by_effort = {}
+    usage_by_setting = {}
     for t in trials:
         if t.get("usage"):
-            usage_by_effort.setdefault(t.get("reasoning_effort") or "?", []).extend(t["usage"])
-    if usage_by_effort:
-        lines += ["", "## Token usage per API request, by reasoning effort", "",
-                  "| Effort | Requests | Avg prompt | Avg cache hit | Avg completion | Avg reasoning |",
-                  "|---|---|---|---|---|---|"]
-        for effort_level, usages in usage_by_effort.items():
+            key = (t.get("model") or MODEL_DEFAULT, t.get("reasoning_effort") or "?")
+            usage_by_setting.setdefault(key, []).extend(t["usage"])
+    if usage_by_setting:
+        lines += ["", "## Token usage per API request, by model and reasoning effort", "",
+                  "| Model | Effort | Requests | Avg prompt | Avg cache hit | Avg completion | Avg reasoning | Est. cost total |",
+                  "|---|---|---|---|---|---|---|---|"]
+        for (model, effort_level), usages in usage_by_setting.items():
             s = _sum_usage(usages)
             n = s["requests"]
-            lines.append(f"| {effort_level} | {n} | {s['prompt'] / n:.0f} | {s['cache_hit'] / n:.0f} | "
-                         f"{s['completion'] / n:.0f} | {s['reasoning'] / n:.0f} |")
+            cost = estimate_cost(usages, model)
+            lines.append(f"| {model} | {effort_level} | {n} | {s['prompt'] / n:.0f} | {s['cache_hit'] / n:.0f} | "
+                         f"{s['completion'] / n:.0f} | {s['reasoning'] / n:.0f} | "
+                         f"{f'${cost:.2f}' if cost is not None else '-'} |")
 
     lines += ["", "## Score trajectory (promoted candidates only)", "",
               "| Generation | Candidate | Dev score | Held-out score |", "|---|---|---|---|"]
@@ -703,7 +764,16 @@ def main():
         return
 
     num_generations = next((int(a) for a in sys.argv[1:] if a.isdigit()), 4)
+    model = option("--model", MODEL_DEFAULT)
     effort = option("--effort", REASONING_EFFORT_DEFAULT)
+    if provider_of(model) == "openai":
+        if not os.getenv("OPENAI_API_KEY"):
+            print("[CRITICAL] OPENAI_API_KEY is not set (expected in .env)")
+            sys.exit(1)
+        allowed = OPENAI_REASONING_EFFORTS.get(model)
+        if allowed and effort not in allowed:
+            print(f"[CRITICAL] {model} does not accept reasoning effort '{effort}'; use one of {', '.join(allowed)}")
+            sys.exit(1)
     start_gen = _next_trial_start()
 
     with open(CURRENT_SUPERVISOR_PATH, "r", encoding="utf-8") as f:
@@ -736,17 +806,20 @@ def main():
             break
         gen_idx = start_gen + g
         print(f"\n=== Generation {g + 1}/{num_generations} (gen_{gen_idx}): sampling {CANDIDATES_PER_GENERATION} candidates "
-              f"at reasoning effort {effort} ===")
+              f"from {model} at reasoning effort {effort} ===")
         prompt = build_prompt(current_code, best_score, best_traces, load_context_report(),
                               best_val_score=best_val_score, previous_attempts=previous_attempts)
         with ThreadPoolExecutor(max_workers=CANDIDATES_PER_GENERATION) as pool:
-            responses = list(pool.map(lambda _: call_deepseek(prompt, reasoning_effort=effort),
+            responses = list(pool.map(lambda _: call_llm(prompt, model=model, reasoning_effort=effort),
                                       range(CANDIDATES_PER_GENERATION)))
 
         records = [_evaluate_candidate(resp, usage, k, gen_idx) for k, (resp, usage) in enumerate(responses, start=1)]
-        tokens = _sum_usage([u for r in records for u in r["usage"]])
+        all_usage = [u for r in records for u in r["usage"]]
+        tokens = _sum_usage(all_usage)
+        cost = estimate_cost(all_usage, model)
         print(f"[TOKENS] {tokens['requests']} requests: prompt {tokens['prompt']} (cache hit {tokens['cache_hit']}), "
-              f"completion {tokens['completion']} (reasoning {tokens['reasoning']})")
+              f"completion {tokens['completion']} (reasoning {tokens['reasoning']})"
+              + (f", est. ${cost:.3f}" if cost is not None else ""))
 
         winner = None
         for r in records:
@@ -777,7 +850,7 @@ def main():
                 save_candidate_only(r["code"], gen_idx, r["candidate"])
             log_trial(gen_idx, r["decision"], r["score"], r.get("failure_analysis"), r.get("proposed_change"),
                       reason=r.get("reason"), self_check=r.get("self_check"), candidate=r["candidate"],
-                      reasoning_effort=effort, usage=r["usage"])
+                      reasoning_effort=effort, usage=r["usage"], model=model)
 
         if winner is not None:
             promote(winner["code"], gen_idx, winner["candidate"])
@@ -787,7 +860,7 @@ def main():
             winner["decision"] = "PROMOTED"
             log_trial(gen_idx, "PROMOTED", winner["score"], winner["failure_analysis"], winner["proposed_change"],
                       validation_score=best_val_score, self_check=winner["self_check"], candidate=winner["candidate"],
-                      reasoning_effort=effort, usage=winner["usage"])
+                      reasoning_effort=effort, usage=winner["usage"], model=model)
         else:
             print(f"[NO PROMOTION] champion stays at {best_score:.3f}")
 
