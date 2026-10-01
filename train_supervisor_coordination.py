@@ -77,6 +77,13 @@ TRACE_SCENARIOS = 2
 
 REGRESSION_ABS_TOLERANCE = 20.0
 REGRESSION_REL_TOLERANCE = 0.15
+# Also allow a regression of up to 10% of the champion's battery average. With
+# only the two terms above, all 12 gen_1 candidates of the first three
+# independent runs were rejected - including averages of 164, 188 and 194
+# against the seed's 518 - for regressions of 3-47 points on the target-change
+# and oscillation scenarios, where the seed is unusually strong (it rescales the
+# setpoints exactly on a target change; on oscillations even the MPC is worse).
+REGRESSION_AVG_TOLERANCE = 0.10
 
 # Same seeds as benchmark_coordination.py, one scenario per cell, so these are
 # the "_0" scenarios of the baseline CSV and the numbers are directly comparable.
@@ -337,7 +344,8 @@ Score = {w['production_iae_l']:g} * production off target (integral of |Q - targ
       + {w['setpoint_tv_m']:g} * total setpoint travel (sum of |change| of both setpoints, m)
       + {w['exceptions']:g} * exceptions or timeouts of your function
 Promotion requires a better average AND no single scenario worse than the champion by more than
-the larger of {REGRESSION_ABS_TOLERANCE:g} points or {REGRESSION_REL_TOLERANCE:.0%}.
+the largest of {REGRESSION_ABS_TOLERANCE:g} points, {REGRESSION_REL_TOLERANCE:.0%} of that scenario's score, or {REGRESSION_AVG_TOLERANCE:.0%} of the champion's
+battery average.
 
 TASK:
 1. Diagnose what causes the worst-scoring scenarios, using the traces and the plant description: how does each disturbance move the pump voltages and upper levels, and which objective is violated?
@@ -480,8 +488,10 @@ def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, rea
 
 
 def find_scenario_regression(best_traces, cand_traces):
+    battery_average = float(np.mean([b["score"] for b in best_traces]))
     for b, c in zip(best_traces, cand_traces):
-        allowed = max(REGRESSION_ABS_TOLERANCE, REGRESSION_REL_TOLERANCE * b["score"])
+        allowed = max(REGRESSION_ABS_TOLERANCE, REGRESSION_REL_TOLERANCE * b["score"],
+                      REGRESSION_AVG_TOLERANCE * battery_average)
         if c["score"] > b["score"] + allowed:
             return b["scenario"], b["score"], c["score"]
     return None
@@ -685,7 +695,8 @@ def main():
     previous_attempts = []
     for g in range(num_generations):
         if os.path.exists(STOP_FILE):
-            os.remove(STOP_FILE)
+            # Left in place so parallel runs (--run run1/run2/...) all see it;
+            # it is cleared when the trainer is started next time.
             print(f"\n[STOP] {STOP_FILE} found - stopping before generation {g + 1}/{num_generations}; "
                   f"no requests were sent for it")
             break
