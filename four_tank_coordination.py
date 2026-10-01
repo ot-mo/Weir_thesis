@@ -25,6 +25,9 @@ Every episode starts at the steady operating point, as a running plant would.
 Supervisor interface (no anomaly flags):
     supervise(telemetry_window, active_setpoints, objectives) ->
         {"diagnosis": str, "adjusted_setpoints": {"h1": float, "h2": float}}
+called every 10 s with the last 600 one-second samples (history before t=0 is
+steady operation). Each sample holds the four levels, both pump voltages,
+production, and the setpoints and production target active at that time.
 """
 
 from dataclasses import dataclass, field
@@ -105,7 +108,10 @@ class CoordinationScenario:
     pattern_label: str = "none"
     sim_time: float = 1200.0
     dt: float = 1.0
-    window_steps: int = 50
+    # 10 minutes of history per decision. With the earlier 50 s window a
+    # stateless supervisor could not tell an oscillating disturbance (periods
+    # 200-500 s) from a ramp. The history before t=0 is steady operation.
+    window_steps: int = 600
     decision_interval_steps: int = 10
     supervisor_timeout_s: float = 0.5
     sensor_noise_std: float = 0.0
@@ -214,6 +220,20 @@ def _make_pid(setpoint, steady_voltage, dt):
     return pid
 
 
+def _telemetry_sample(t, levels, v1, v2, sp, target, p):
+    """One logged sample. Besides the measurements it carries the setpoints
+    and production target that were active, as a DCS logs them: a stateless
+    supervisor otherwise cannot see its own recent setpoint changes, and the
+    first generated supervisors misread the transient after a target change
+    as a disturbance (setpoint chattering, drifting disturbance estimates)."""
+    return {"time": t, "h1": round(float(levels[0]), 4), "h2": round(float(levels[1]), 4),
+            "h3": round(float(levels[2]), 4), "h4": round(float(levels[3]), 4),
+            "v1": round(float(v1), 3), "v2": round(float(v2), 3),
+            "production": round(float(production_lps(max(levels[0], 0.0), max(levels[1], 0.0), p)), 3),
+            "sp_h1": round(float(sp["h1"]), 4), "sp_h2": round(float(sp["h2"]), 4),
+            "production_target": round(float(target), 3)}
+
+
 def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict:
     p = plant_params()
     model = four_tank(int_method="numpy")
@@ -229,7 +249,11 @@ def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict
 
     nsteps = int(scenario.sim_time / scenario.dt)
     hist = {k: [] for k in ("t", "h1", "h2", "h3", "h4", "v1", "v2", "q", "target", "sp1", "sp2")}
-    telemetry, decisions, exceptions = [], [], 0
+    decisions, exceptions = [], 0
+    # The plant was in steady operation before t=0, so the first window is
+    # already full of history.
+    telemetry = [_telemetry_sample(-(scenario.window_steps - i) * scenario.dt, x, ss["v1"], ss["v2"], sp, target, p)
+                 for i in range(scenario.window_steps)]
 
     for k in range(nsteps):
         t = k * scenario.dt
@@ -251,12 +275,9 @@ def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict
         for key, val in (("t", t), ("h1", x[0]), ("h2", x[1]), ("h3", x[2]), ("h4", x[3]), ("v1", v1), ("v2", v2),
                          ("q", q), ("target", target), ("sp1", sp["h1"]), ("sp2", sp["h2"])):
             hist[key].append(float(val))
-        mq = production_lps(max(meas[0], 0.0), max(meas[1], 0.0), p)
-        telemetry.append({"time": t, "h1": round(float(meas[0]), 4), "h2": round(float(meas[1]), 4),
-                          "h3": round(float(meas[2]), 4), "h4": round(float(meas[3]), 4),
-                          "v1": round(v1, 3), "v2": round(v2, 3), "production": round(float(mq), 3)})
+        telemetry.append(_telemetry_sample(t, meas, v1, v2, sp, target, p))
 
-        if k >= scenario.window_steps and k % scenario.decision_interval_steps == 0:
+        if k > 0 and k % scenario.decision_interval_steps == 0:
             recent = telemetry[-scenario.window_steps:]
             t0 = recent[0]["time"]
             window = [dict(s, time=s["time"] - t0) for s in recent]
