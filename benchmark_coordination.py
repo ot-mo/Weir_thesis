@@ -1,6 +1,6 @@
 """Baselines on the four-tank coordination test bed (no API calls).
 
-Run: python benchmark_coordination.py [per_cell]
+Run: python benchmark_coordination.py [per_cell]   (default 3, as in the trainer)
 
 Evaluates the fixed recipe (PID only), the MPC supervisor with an estimated
 disturbance, and the oracle MPC on three seeded batteries - development,
@@ -42,7 +42,9 @@ def _run(job):
 
 
 def main():
-    per_cell = int(sys.argv[1]) if len(sys.argv) > 1 else 2
+    # 3 matches train_supervisor_coordination.SCENARIOS_PER_CELL, so the trainer's
+    # report finds baselines for exactly its scenarios.
+    per_cell = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     batteries = {"dev": C.make_battery("dev", per_cell, BATTERY_SEEDS["dev"]),
                  "heldout": C.make_battery("dev", per_cell, BATTERY_SEEDS["heldout"]),
                  "beyond": C.make_battery("beyond", per_cell, BATTERY_SEEDS["beyond"])}

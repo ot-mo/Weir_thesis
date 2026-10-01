@@ -75,21 +75,29 @@ NON_THINKING_TEMPERATURE = 1.0
 STOP_FILE = "STOP_TRAINING"
 TRACE_SCENARIOS = 2
 
-REGRESSION_ABS_TOLERANCE = 20.0
-REGRESSION_REL_TOLERANCE = 0.15
-# Also allow a regression of up to 10% of the champion's battery average. With
-# only the two terms above, all 12 gen_1 candidates of the first three
-# independent runs were rejected - including averages of 164, 188 and 194
-# against the seed's 518 - for regressions of 3-47 points on the target-change
-# and oscillation scenarios, where the seed is unusually strong (it rescales the
-# setpoints exactly on a target change; on oscillations even the MPC is worse).
-REGRESSION_AVG_TOLERANCE = 0.10
+# Regression guard, by disturbance type rather than by single scenario. A
+# per-scenario guard (one scenario per cell) blocked almost every candidate
+# after the first generation in the window-50 runs - e.g. a 150.3 average
+# against the champion's 196 - because a single oscillation or target-change
+# scenario got worse, even when the rest of that disturbance type improved.
+# Now: the mean score of each disturbance type (nominal, feed, pump, split,
+# combined) may get worse by at most the larger of GROUP_ABS_TOLERANCE points
+# or GROUP_REL_TOLERANCE of the champion's mean for that type, and no single
+# scenario may get worse by more than the larger of SCENARIO_CAP_ABS points or
+# SCENARIO_CAP_REL of its score (to stop one scenario being wrecked).
+GROUP_ABS_TOLERANCE = 10.0
+GROUP_REL_TOLERANCE = 0.10
+SCENARIO_CAP_ABS = 100.0
+SCENARIO_CAP_REL = 0.50
 
-# Same seeds as benchmark_coordination.py, one scenario per cell, so these are
-# the "_0" scenarios of the baseline CSV and the numbers are directly comparable.
-DEV_BATTERY = C.make_battery("dev", per_cell=1, seed=1)
-VALIDATION_BATTERY = C.make_battery("dev", per_cell=1, seed=2)
-BEYOND_BATTERY = C.make_battery("beyond", per_cell=1, seed=3)
+# Same seeds and scenarios per cell as benchmark_coordination.py, so the
+# baseline CSV has these exact scenarios. Three scenarios per cell instead of
+# one, so a single noisy scenario weighs less in both the score and the guard.
+SCENARIOS_PER_CELL = 3
+DEV_BATTERY = C.make_battery("dev", per_cell=SCENARIOS_PER_CELL, seed=1)
+VALIDATION_BATTERY = C.make_battery("dev", per_cell=SCENARIOS_PER_CELL, seed=2)
+BEYOND_BATTERY = C.make_battery("beyond", per_cell=SCENARIOS_PER_CELL, seed=3)
+_KIND_BY_NAME = {s.name: s.kind_label for s in DEV_BATTERY}
 
 
 def _disturbance_text(scenario, t):
@@ -220,7 +228,10 @@ Pumps are limited to {C.PUMP_LIMITS[0]:g}-{C.PUMP_LIMITS[1]:g} V. All four level
 
 Base layer: two PI level loops at a 1 s sample time (Kp={C.PID_KP:g} V/m, Ki={C.PID_KI:g} V/(m*s)), paired
 off-diagonally: the h1 loop drives PUMP 2 and the h2 loop drives PUMP 1. They track your
-setpoints for h1 and h2; you never drive the pumps directly.
+setpoints for h1 and h2; you never drive the pumps directly. After a setpoint change the loops
+need about 1.5-2 minutes to settle (production within 2% after ~70 s, within 0.5% after ~115 s),
+and meanwhile the pump voltages overshoot their new steady values by about 1-1.5 V: levels,
+slopes and voltages measured during that transient reflect the setpoint change, not a disturbance.
 
 Production: Q = a1*sqrt(2g*h1) + a2*sqrt(2g*h2), reported in L/s. With the loops holding h1 and h2
 at their setpoints, Q at steady state depends only on the two setpoints, while the pump voltages
@@ -229,8 +240,8 @@ relations itself (the constants above and `math` are available), e.g. to find th
 that gives the target production.
 
 Design operating point: setpoints h1={C.NOMINAL_SETPOINTS['h1']}, h2={C.NOMINAL_SETPOINTS['h2']} give Q={C.NOMINAL_PRODUCTION:.2f} L/s with
-v1={op['v1']:.2f} V, v2={op['v2']:.2f} V, h3={op['h3']:.3f} m, h4={op['h4']:.3f} m. Every run starts in steady
-operation at this point. Measurements are noise-free (rounded to 0.1 mm).
+v1={op['v1']:.2f} V, v2={op['v2']:.2f} V, h3={op['h3']:.3f} m, h4={op['h4']:.3f} m. The plant has been in
+steady operation at this point since long before t = 0. Measurements are noise-free (rounded to 0.1 mm).
 
 Operating objectives (the objectives argument carries the current values):
 - keep production Q at the production target (normally {C.NOMINAL_PRODUCTION:.2f} L/s; the target can change
@@ -267,24 +278,29 @@ def _attempts_block(previous_attempts):
         return ""
     entries = []
     for a in attempts:
-        per_scenario = ", ".join(f"{t['scenario']}={t['score']:.0f}" for t in a["traces"]) if a.get("traces") else "not scored"
+        per_type = (", ".join(f"{kind} {mean:.0f}" for kind, mean in _group_means(a["traces"]).items())
+                    if a.get("traces") else "not scored")
         entries.append(f"- candidate {a['candidate']}: {a['decision']}"
                        + (f" ({a['reason']})" if a.get("reason") else "")
                        + (f", avg {a['score']:.1f}" if a.get("score") is not None else "")
-                       + f"; per-scenario: {per_scenario}"
+                       + f"; mean per type: {per_type}"
                        + f"\n  changed: {str(a.get('proposed_change') or '')[:300]}")
     return ("\nPREVIOUS GENERATION'S NON-PROMOTED ATTEMPTS (sampled independently; learn from what "
             "they tried and how it scored):\n" + "\n".join(entries) + "\n")
 
 
 def _results_block(traces):
-    lines = []
+    """Means per disturbance type, then one compact line per scenario:
+    score | litres off target | seconds h2 outside band | seconds upper level
+    above limit | setpoint travel (m) | recovery (s) [| safety s, exceptions if any]."""
+    lines = ["Mean score per disturbance type: "
+             + ", ".join(f"{kind} {mean:.1f}" for kind, mean in _group_means(traces).items()), ""]
     for t in traces:
         m = t["metrics"]
-        lines.append(f"- {t['scenario']}: score {t['score']:.1f} | production off target {m['production_iae_l']:.0f} L | "
-                     f"h2 band violated {m['band_violation_s']:.0f} s | upper limit violated {m['upper_violation_s']:.0f} s | "
-                     f"safety {m['safety_violation_s']:.0f} s | setpoint travel {m['setpoint_tv_m']:.3f} m | "
-                     f"recovery {m['recovery_s']:.0f} s | pump saturated {m['saturation_s']:.0f} s | exceptions {m['exceptions']}")
+        extra = (f" | safety {m['safety_violation_s']:.0f}s" if m["safety_violation_s"] else "") + \
+                (f" | EXCEPTIONS {m['exceptions']}" if m["exceptions"] else "")
+        lines.append(f"- {t['scenario']}: {t['score']:.1f} | {m['production_iae_l']:.0f} L | band {m['band_violation_s']:.0f}s | "
+                     f"upper {m['upper_violation_s']:.0f}s | travel {m['setpoint_tv_m']:.3f} m | recovery {m['recovery_s']:.0f}s{extra}")
     return "\n".join(lines)
 
 
@@ -308,11 +324,13 @@ target and the operating constraints hold while disturbances act on the plant.
 Your output is Python code that runs online without you.
 {_plant_block()}
 HOW YOUR FUNCTION IS CALLED:
-- Every {sample.decision_interval_steps} s (from t = {sample.window_steps} s on), with the most recent {sample.window_steps} one-second
-  samples: len(telemetry_window) is ALWAYS exactly {sample.window_steps}. Consecutive windows overlap by
-  {sample.window_steps - sample.decision_interval_steps} samples.
+- Every {sample.decision_interval_steps} s (from t = {sample.decision_interval_steps} s on), with the most recent {sample.window_steps} one-second samples
+  ({sample.window_steps // 60} minutes): len(telemetry_window) is ALWAYS exactly {sample.window_steps}. The history before t = 0 is
+  steady operation. Consecutive windows overlap by {sample.window_steps - sample.decision_interval_steps} samples.
 - "time" in each sample is seconds since the window's first sample (0, 1, ..., {sample.window_steps - 1}), not
   absolute time.
+- Each sample also records the setpoints (sp_h1, sp_h2) and production target that were active
+  at that time, so you can see your own recent setpoint changes and any target change in the window.
 - The function is stateless: it is re-loaded fresh and keeps no memory between calls; everything
   it knows comes from the current window and its arguments.
 - The setpoints you return are clamped to setpoint_limits and held until the next call.
@@ -326,8 +344,10 @@ def supervise(telemetry_window, active_setpoints, objectives):
     }}
 
 telemetry_window is a list of dicts shaped like:
-{{"time": float, "h1": float, "h2": float, "h3": float, "h4": float, "v1": float, "v2": float, "production": float}}
-(levels in m, pump voltages in V, production in L/s). active_setpoints is {{"h1": float, "h2": float}}.
+{{"time": float, "h1": float, "h2": float, "h3": float, "h4": float, "v1": float, "v2": float, "production": float,
+ "sp_h1": float, "sp_h2": float, "production_target": float}}
+(levels and setpoints in m, pump voltages in V, production and target in L/s). active_setpoints is
+{{"h1": float, "h2": float}}.
 objectives is {{"production_target": float (L/s), "h2_band": [low, high], "upper_level_limit": float,
 "setpoint_limits": [low, high]}}. "diagnosis" is a short human-readable explanation of the decision.
 
@@ -343,9 +363,10 @@ Score = {w['production_iae_l']:g} * production off target (integral of |Q - targ
       + {w['safety_violation_s']:g} * seconds with h1 or h2 outside the safety limits
       + {w['setpoint_tv_m']:g} * total setpoint travel (sum of |change| of both setpoints, m)
       + {w['exceptions']:g} * exceptions or timeouts of your function
-Promotion requires a better average AND no single scenario worse than the champion by more than
-the largest of {REGRESSION_ABS_TOLERANCE:g} points, {REGRESSION_REL_TOLERANCE:.0%} of that scenario's score, or {REGRESSION_AVG_TOLERANCE:.0%} of the champion's
-battery average.
+The scenarios are grouped by disturbance type (nominal = production-target changes only; feed;
+pump; split; combined). Promotion requires a better battery average, AND for every type a mean
+score no worse than the champion's by more than the larger of {GROUP_ABS_TOLERANCE:g} points or {GROUP_REL_TOLERANCE:.0%}, AND no
+single scenario worse than the champion's by more than the larger of {SCENARIO_CAP_ABS:g} points or {SCENARIO_CAP_REL:.0%}.
 
 TASK:
 1. Diagnose what causes the worst-scoring scenarios, using the traces and the plant description: how does each disturbance move the pump voltages and upper levels, and which objective is violated?
@@ -376,7 +397,8 @@ Current supervisor source:
 
 Current battery score: {best_score:.1f}. {gen_check}
 
-Per-scenario results:
+Per-scenario results (score | litres off target | seconds h2 outside band | seconds upper level above
+limit | setpoint travel | recovery time):
 {_results_block(traces)}
 
 DECISION TRACES of the current supervisor on its {TRACE_SCENARIOS} worst-scoring scenarios, one row per call where
@@ -487,13 +509,25 @@ def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, rea
         }) + "\n")
 
 
-def find_scenario_regression(best_traces, cand_traces):
-    battery_average = float(np.mean([b["score"] for b in best_traces]))
+def _group_means(traces):
+    groups = {}
+    for t in traces:
+        groups.setdefault(_KIND_BY_NAME.get(t["scenario"], "other"), []).append(t["score"])
+    return {kind: float(np.mean(scores)) for kind, scores in groups.items()}
+
+
+def find_regression(best_traces, cand_traces):
+    """Reason string if the candidate regresses a disturbance type's mean or
+    wrecks a single scenario (see GROUP_* and SCENARIO_CAP_*), else None."""
+    best_groups, cand_groups = _group_means(best_traces), _group_means(cand_traces)
+    for kind, best_mean in best_groups.items():
+        allowed = max(GROUP_ABS_TOLERANCE, GROUP_REL_TOLERANCE * best_mean)
+        if cand_groups[kind] > best_mean + allowed:
+            return f"'{kind}' disturbances got worse on average: {best_mean:.1f} -> {cand_groups[kind]:.1f}"
     for b, c in zip(best_traces, cand_traces):
-        allowed = max(REGRESSION_ABS_TOLERANCE, REGRESSION_REL_TOLERANCE * b["score"],
-                      REGRESSION_AVG_TOLERANCE * battery_average)
+        allowed = max(SCENARIO_CAP_ABS, SCENARIO_CAP_REL * b["score"])
         if c["score"] > b["score"] + allowed:
-            return b["scenario"], b["score"], c["score"]
+            return f"{b['scenario']} got much worse: {b['score']:.1f} -> {c['score']:.1f}"
     return None
 
 
@@ -722,11 +756,10 @@ def main():
             if r["score"] >= best_score:
                 r["decision"] = "ROLLBACK"
             else:
-                regression = find_scenario_regression(best_traces, r["traces"])
+                regression = find_regression(best_traces, r["traces"])
                 if regression:
-                    scen_name, old_s, new_s = regression
                     r["decision"] = "REJECTED_REGRESSION"
-                    r["reason"] = f"{scen_name} regressed {old_s:.1f} -> {new_s:.1f}"
+                    r["reason"] = regression
                 else:
                     r["decision"] = "ELIGIBLE"
                     if winner is None or r["score"] < winner["score"]:
