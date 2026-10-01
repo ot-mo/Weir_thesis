@@ -62,13 +62,15 @@ MAX_RELATION_WORDS = 30
 
 CANDIDATES_PER_GENERATION = 4
 REASONING_EFFORT_DEFAULT = "low"  # see train_supervisor_four_tank.py for the measurements behind this
-# Hard cap on output tokens per reply, reasoning included. "low" effort is only
-# a preference: in the first coordination run 3 of 7 replies reasoned until the
-# default 65,536-token limit (finish_reason=length) and returned nothing. The
-# replies that succeeded needed ~43k tokens on this task (the leak task needed
-# ~25k), so a 32k cap cut off replies that would have succeeded; 48k sits
-# above that while still cutting runaways a quarter short of the default.
-MAX_OUTPUT_TOKENS = 49152
+# Cap on output tokens per reply, reasoning included ("low" effort is only a
+# preference). DeepSeek's default is 65,536. On this task the replies that
+# succeeded used 33k-54k tokens (the leak task: 14k-33k), and 3 of 7 replies in
+# the first run were cut off at exactly the default with nothing returned -
+# most likely the long tail of the same distribution, not endless loops. Lower
+# caps (32k, 48k) would have cut off successful replies too, so the cap is set
+# above the default instead, to let long replies finish while still bounding a
+# genuine runaway. DeepSeek allows up to 384k.
+MAX_OUTPUT_TOKENS = 131072
 NON_THINKING_TEMPERATURE = 1.0
 STOP_FILE = "STOP_TRAINING"
 TRACE_SCENARIOS = 2
