@@ -62,6 +62,12 @@ MAX_RELATION_WORDS = 30
 
 CANDIDATES_PER_GENERATION = 4
 REASONING_EFFORT_DEFAULT = "low"  # see train_supervisor_four_tank.py for the measurements behind this
+# Hard cap on output tokens per reply, reasoning included. "low" effort is only
+# a preference: in the first coordination run 3 replies reasoned until the
+# default 65,536-token limit (finish_reason=length) and returned nothing.
+# Normal low-effort replies need ~25k, so 32k leaves headroom and halves what a
+# runaway reply costs before it is retried.
+MAX_OUTPUT_TOKENS = 32768
 NON_THINKING_TEMPERATURE = 1.0
 STOP_FILE = "STOP_TRAINING"
 TRACE_SCENARIOS = 2
@@ -208,7 +214,9 @@ setpoints for h1 and h2; you never drive the pumps directly.
 
 Production: Q = a1*sqrt(2g*h1) + a2*sqrt(2g*h2), reported in L/s. With the loops holding h1 and h2
 at their setpoints, Q at steady state depends only on the two setpoints, while the pump voltages
-and upper levels needed to hold them depend on the disturbances.
+and upper levels needed to hold them depend on the disturbances. Your code may evaluate these
+relations itself (the constants above and `math` are available), e.g. to find the setpoint pair
+that gives the target production.
 
 Design operating point: setpoints h1={C.NOMINAL_SETPOINTS['h1']}, h2={C.NOMINAL_SETPOINTS['h2']} give Q={C.NOMINAL_PRODUCTION:.2f} L/s with
 v1={op['v1']:.2f} V, v2={op['v2']:.2f} V, h3={op['h3']:.3f} m, h4={op['h4']:.3f} m. Every run starts in steady
@@ -331,7 +339,7 @@ the larger of {REGRESSION_ABS_TOLERANCE:g} points or {REGRESSION_REL_TOLERANCE:.
 TASK:
 1. Diagnose what causes the worst-scoring scenarios, using the traces and the plant description: how does each disturbance move the pump voltages and upper levels, and which objective is violated?
 2. Write an improved `supervise` that keeps production on target and the constraints satisfied, using the free degree of freedom, without moving the setpoints more than needed.
-3. In "self_check", pick at least one development-range disturbance and show numerically which setpoints your logic settles at and that production and the constraints hold there (use the steady-state mass balances).
+3. In "self_check", state in 2-4 sentences how your logic keeps production on target and the constraints satisfied when a disturbance pushes an upper level toward its limit or a pump toward saturation. Do not solve the mass balances by hand; if your logic needs steady-state relations, compute them in the code.
 4. Add at most {MAX_RELATIONS_PER_GENERATION} NEW generalizable cause-effect relations this result reveals, each ONE sentence of at most {MAX_RELATION_WORDS} words. Do not repeat a listed one.
 
 OUTPUT FORMAT - strictly this JSON:
@@ -342,7 +350,7 @@ OUTPUT FORMAT - strictly this JSON:
     "change_type": "structural | scalar/config | bug_fix",
     "next_recommendation": "string"
   }},
-  "self_check": "string: numeric steady-state check of your setpoint logic for at least one disturbance",
+  "self_check": "string, 2-4 sentences: how your logic handles an upper level near its limit or a saturating pump",
   "proposed_change": "string, at most 2 sentences",
   "code": "full source of the new supervise function as a string",
   "relations_learned": ["one sentence, at most {MAX_RELATION_WORDS} words", ...]
@@ -390,6 +398,7 @@ def call_deepseek(prompt, reasoning_effort=REASONING_EFFORT_DEFAULT, max_retries
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
+                max_tokens=MAX_OUTPUT_TOKENS,
                 **_thinking_kwargs(reasoning_effort),
             )
         except Exception as e:
