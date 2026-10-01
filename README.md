@@ -214,7 +214,16 @@ time, setpoint total variation and recovery time.
 
 ```bash
 python benchmark_coordination.py [per_cell]   # fixed recipe vs MPC vs oracle MPC, no API calls
+python train_supervisor_coordination.py [num_generations] [--effort low] [--run NAME]  # LLM meta-supervisor (billed)
+python train_supervisor_coordination.py --report [--run NAME]                           # champion vs baselines, no API calls
 ```
+
+[train_supervisor_coordination.py](train_supervisor_coordination.py) is a copy of
+the four-tank trainer (which stays as it is for the leak task): the LLM writes
+`supervise(telemetry_window, active_setpoints, objectives)`, which returns new
+setpoints only, passes the same security gate and is promoted on the development
+battery. The beyond-range battery is never shown to the LLM and only appears in the
+report, next to the baselines on identical scenarios.
 
 | Battery | Fixed recipe | MPC (estimated) | MPC (oracle) |
 |---|---|---|---|
