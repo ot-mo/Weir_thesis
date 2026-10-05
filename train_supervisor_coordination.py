@@ -95,7 +95,7 @@ MAX_CONTEXT_RELATIONS = 12
 MAX_RELATIONS_PER_GENERATION = 2
 MAX_RELATION_WORDS = 30
 
-CANDIDATES_PER_GENERATION = 4
+CANDIDATES_PER_GENERATION = 3  # was 4; 3 since 2026-10-05 to cut cost per generation
 REASONING_EFFORT_DEFAULT = "low"  # see train_supervisor_four_tank.py for the measurements behind this
 # Cap on output tokens per reply, reasoning included ("low" effort is only a
 # preference). DeepSeek's default is 65,536. On this task the replies that
