@@ -39,3 +39,34 @@
 
 [DONE] Final best score: 231.503. current_supervisor.py reflects the best candidate found.
 [SUCCESS] Report written to results\final_report_coordination.md and results\summary_coordination.csv
+[BASELINE] current_supervisor.py avg score: 231.503 (held-out: 247.461)
+
+=== Generation 1/3 (gen_5): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_5: type mean +max(10, 10%), single scenario +max(100, 50%)
+[TOKENS] 3 requests: prompt 51096 (cache hit 6144), completion 48971 (reasoning 40001), est. $0.036
+  c1: score 309.958 (champion 231.503) -> ROLLBACK [kept 92% of the champion's lines, +42/-13]
+  c2: score 337.490 (champion 231.503) -> ROLLBACK [kept 98% of the champion's lines, +29/-3]
+  c3: score 406.890 (champion 231.503) -> ROLLBACK [kept 98% of the champion's lines, +19/-3]
+[NO PROMOTION] champion stays at 231.503
+[LEARNED] ['Low-pass filtering the estimated load over a time constant comparable to the oscillation period cuts setpoint churn while still tracking sustained offsets within the loop settling time.', "Because production depends only on h1 and h2, smoother setpoint commands reduce the PI loops' tracking error and hence production deviation during oscillatory disturbances."]
+
+=== Generation 2/3 (gen_6): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_6: type mean +max(10, 10%), single scenario +max(100, 50%)
+[TOKENS] 3 requests: prompt 61836 (cache hit 13440), completion 49841 (reasoning 41708), est. $0.037
+  c1: score 254.591 (champion 231.503) -> ROLLBACK [kept 98% of the champion's lines, +9/-3]
+  c2: score 251.004 (champion 231.503) -> ROLLBACK [kept 98% of the champion's lines, +14/-3]
+  c3: score 254.591 (champion 231.503) -> ROLLBACK [kept 84% of the champion's lines, +38/-27]
+[NO PROMOTION] champion stays at 231.503
+[LEARNED] ['Including measured level slopes in the mass-balance residual removes the ninety-degree phase lag that makes a supervisor shift setpoints out of phase with an oscillatory feed disturbance.', 'A steady-state residual underestimates the peak of an oscillatory feed disturbance, so upper-level safety margins must be based on the slope-corrected estimate.']
+
+=== Generation 3/3 (gen_7): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_7: type mean +max(10, 10%), single scenario +max(100, 50%)
+[TOKENS] 3 requests: prompt 61251 (cache hit 13440), completion 46577 (reasoning 37809), est. $0.035
+  c1: score 406.890 (champion 231.503) -> ROLLBACK [kept 95% of the champion's lines, +24/-9]
+  c2: score 404.643 (champion 231.503) -> ROLLBACK [kept 84% of the champion's lines, +52/-27]
+  c3: score 304.481 (champion 231.503) -> ROLLBACK [kept 97% of the champion's lines, +31/-5]
+[NO PROMOTION] champion stays at 231.503
+[LEARNED] ['Filtering the inferred feed offset with a 150 s time constant suppresses zero-mean oscillatory setpoint churn but adds lag on sustained step offsets.', 'A filtered supervisor still leaves residual out-of-phase setpoint travel when the disturbance period is only about twice the filter time constant.']
+
+[DONE] Final best score: 231.503. current_supervisor.py reflects the best candidate found.
+[SUCCESS] Report written to results\final_report_coordination.md and results\summary_coordination.csv
