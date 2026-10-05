@@ -1,0 +1,10 @@
+trial,candidate,reasoning_effort,decision,score,validation_score,reason
+1,1,low,REJECTED_REGRESSION,258.0506904761905,,dev_split_sine_1 got much worse: 191.9 -> 649.6
+1,2,low,ROLLBACK,763.8586904761905,,
+1,3,low,REJECTED_SECURITY,,,"syntax error: '{' was never closed (<unknown>, line 163)"
+2,1,low,REJECTED_REGRESSION,259.97316666666666,,dev_split_sine_1 got much worse: 191.9 -> 326.5
+2,2,low,ROLLBACK,1885.690142857143,,
+2,3,low,REJECTED_REGRESSION,335.6329285714285,,dev_pump_step_0 got much worse: 118.6 -> 383.3
+3,1,low,REJECTED_REGRESSION,369.5614761904762,,'nominal' disturbances got worse on average: 251.8 -> 413.1
+3,2,low,REJECTED_REGRESSION,260.9688571428572,,dev_split_sine_1 got much worse: 191.9 -> 437.4
+3,3,low,REJECTED_REGRESSION,397.4345238095238,,'nominal' disturbances got worse on average: 251.8 -> 454.0
