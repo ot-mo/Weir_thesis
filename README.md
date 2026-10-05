@@ -225,7 +225,12 @@ the four-tank trainer (which stays as it is for the leak task): the LLM writes
 `supervise(telemetry_window, active_setpoints, objectives)`, which returns new
 setpoints only, passes the same security gate and is promoted on the development
 battery if it improves the average without making any disturbance type worse on
-average (or wrecking a single scenario). The beyond-range battery is never shown to
+average (or wrecking a single scenario). That regression guard is loose in
+generations 1-2 and tightens in 3-4 and from 5 on, so an early candidate that is
+much better overall but worse on one scenario still gets promoted and its weak
+scenario then shows up in the next prompt's traces. The prompt also shows, for up
+to two non-promoted candidates of the previous generation, the decision trace of
+the scenario each lost most on. The beyond-range battery is never shown to
 the LLM and only appears in the report, next to the baselines on identical scenarios.
 
 | Battery (42 / 42 / 36 scenarios) | Fixed recipe | MPC (estimated) | MPC (oracle) |
@@ -236,7 +241,10 @@ the LLM and only appears in the report, next to the baselines on identical scena
 
 Runs on the earlier setup (50 s window, one scenario per cell, per-scenario
 guard) are archived under `window50_*`. Their best champion scores 226 / 242 /
-1,277 on these batteries.
+1,277 on these batteries. The first 600 s run (fixed guard, before the schedule
+and the failure traces) is in `window600_default` and `results/coordination_window600/`:
+no promotion in 3 generations, as every candidate that beat the seed was rejected
+by the guard.
 
 ## Status / open threads
 

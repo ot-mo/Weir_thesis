@@ -10,8 +10,10 @@ Report only, no API calls: python train_supervisor_coordination.py --report [--r
 
 A copy of train_supervisor_four_tank.py (which stays as it is for the leak
 task) with the same loop - parallel candidates, security gate, elitist
-promotion with a per-disturbance-type regression guard, decision traces, previous
-attempts, lessons learned, stop switch, token logging - pointed at
+promotion with a per-disturbance-type regression guard that tightens over the
+generations, decision traces (the champion's worst scenarios and where
+non-promoted candidates failed), previous attempts, lessons learned, stop
+switch, token logging - pointed at
 four_tank_coordination.py:
 - Interface: supervise(telemetry_window, active_setpoints, objectives) ->
   {"diagnosis": str, "adjusted_setpoints": {"h1": float, "h2": float}}.
@@ -109,6 +111,13 @@ MAX_OUTPUT_TOKENS = 131072
 NON_THINKING_TEMPERATURE = 1.0
 STOP_FILE = "STOP_TRAINING"
 TRACE_SCENARIOS = 2
+# Non-promoted candidates of the previous generation whose worst scenario's
+# decision trace goes into the prompt (rejected-by-guard first, then best
+# average), each cut to at most FAILURE_TRACE_MAX_ROWS rows. Without these the
+# model only saw a one-line rejection reason and never how its oscillation
+# handling actually failed.
+FAILURE_TRACE_CANDIDATES = 2
+FAILURE_TRACE_MAX_ROWS = 30
 
 # Regression guard, by disturbance type rather than by single scenario. A
 # per-scenario guard (one scenario per cell) blocked almost every candidate
@@ -116,14 +125,31 @@ TRACE_SCENARIOS = 2
 # against the champion's 196 - because a single oscillation or target-change
 # scenario got worse, even when the rest of that disturbance type improved.
 # Now: the mean score of each disturbance type (nominal, feed, pump, split,
-# combined) may get worse by at most the larger of GROUP_ABS_TOLERANCE points
-# or GROUP_REL_TOLERANCE of the champion's mean for that type, and no single
-# scenario may get worse by more than the larger of SCENARIO_CAP_ABS points or
-# SCENARIO_CAP_REL of its score (to stop one scenario being wrecked).
-GROUP_ABS_TOLERANCE = 10.0
-GROUP_REL_TOLERANCE = 0.10
-SCENARIO_CAP_ABS = 100.0
-SCENARIO_CAP_REL = 0.50
+# combined) may get worse by at most the larger of an absolute and a relative
+# tolerance of the champion's mean for that type, and no single scenario may
+# get worse by more than the larger of an absolute and a relative cap of its
+# score (to stop one scenario being wrecked).
+#
+# The tolerances follow a schedule over the generations. In the first 600 s
+# run every candidate that beat the seed's average (best 258 against 533) was
+# rejected by the scenario cap or the nominal group, so nothing was promoted
+# and the model kept seeing only the seed's traces. Loose early means a
+# candidate that is much better overall but worse on one scenario still gets
+# promoted; that scenario then shows up in the next prompt's worst-scenario
+# traces and has to be fixed. Stricter later protects what has been gained.
+# The battery average must improve in every tier.
+# Each tier: (from generation, group abs, group rel, scenario cap abs, scenario cap rel).
+GUARD_SCHEDULE = (
+    (1, 10.0, 0.25, 300.0, 1.50),
+    (3, 10.0, 0.15, 200.0, 1.00),
+    (5, 10.0, 0.10, 100.0, 0.50),
+)
+
+
+def guard_tolerances(gen_idx):
+    """(group abs, group rel, scenario cap abs, scenario cap rel) for this generation."""
+    tiers = [t for t in GUARD_SCHEDULE if gen_idx >= t[0]] or GUARD_SCHEDULE[:1]
+    return tiers[-1][1:]
 
 # Same seeds and scenarios per cell as benchmark_coordination.py, so the
 # baseline CSV has these exact scenarios. Three scenarios per cell instead of
@@ -320,8 +346,32 @@ def _attempts_block(previous_attempts):
                        + (f", avg {a['score']:.1f}" if a.get("score") is not None else "")
                        + f"; mean per type: {per_type}"
                        + f"\n  changed: {str(a.get('proposed_change') or '')[:300]}")
-    return ("\nPREVIOUS GENERATION'S NON-PROMOTED ATTEMPTS (sampled independently; learn from what "
-            "they tried and how it scored):\n" + "\n".join(entries) + "\n")
+    block = ("\nPREVIOUS GENERATION'S NON-PROMOTED ATTEMPTS (sampled independently; learn from what "
+             "they tried and how it scored):\n" + "\n".join(entries) + "\n")
+    return block + _failure_traces_block(attempts)
+
+
+def _failure_traces_block(attempts):
+    """Decision trace of the scenario that sank each of up to
+    FAILURE_TRACE_CANDIDATES non-promoted candidates."""
+    failed = [a for a in attempts if a.get("traces") and a.get("failed_scenario")]
+    failed.sort(key=lambda a: (a["decision"] != "REJECTED_REGRESSION", a["score"]))
+    parts = []
+    for a in failed[:FAILURE_TRACE_CANDIDATES]:
+        name = a["failed_scenario"]
+        trace = next(t for t in a["traces"] if t["scenario"] == name)
+        rows = trace["decision_trace"]
+        if len(rows) > FAILURE_TRACE_MAX_ROWS:
+            # Head and tail: the tail shows whether an oscillation dies out or grows.
+            head, tail = FAILURE_TRACE_MAX_ROWS * 2 // 3, FAILURE_TRACE_MAX_ROWS // 3
+            rows = rows[:head] + [f"  ... {len(rows) - head - tail} rows cut"] + rows[-tail:]
+        parts.append(f"candidate {a['candidate']} on {name} (score {trace['score']:.1f}; the champion it was "
+                     f"compared with scored {a['champion_scores'][name]:.1f}):\n" + "\n".join(rows))
+    if not parts:
+        return ""
+    return ("\nWHERE THOSE ATTEMPTS FAILED: decision traces (same format as above) of the scenario each one lost "
+            "most on against the champion. Find the mechanism in its logic that produced this behaviour before "
+            "reusing its idea.\n" + "\n\n".join(parts) + "\n")
 
 
 def _results_block(traces):
@@ -339,7 +389,27 @@ def _results_block(traces):
     return "\n".join(lines)
 
 
-def build_prompt(current_code, best_score, traces, context_relations, best_val_score=None, previous_attempts=None):
+def _guard_schedule_text():
+    lines = []
+    for i, (start, group_abs, group_rel, cap_abs, cap_rel) in enumerate(GUARD_SCHEDULE):
+        end = GUARD_SCHEDULE[i + 1][0] - 1 if i + 1 < len(GUARD_SCHEDULE) else None
+        gens = (f"generation {start} on" if end is None else
+                f"generations {start}-{end}" if end > start else f"generation {start}")
+        lines.append(f"- {gens}: type mean +max({group_abs:g} points, {group_rel:.0%}), "
+                     f"single scenario +max({cap_abs:g} points, {cap_rel:.0%})")
+    return "\n".join(lines)
+
+
+def _guard_rule_text(gen_idx):
+    if gen_idx is None:
+        return ""
+    group_abs, group_rel, cap_abs, cap_rel = guard_tolerances(gen_idx)
+    return (f"This is generation {gen_idx}: a type mean may get worse by at most the larger of {group_abs:g} points "
+            f"or {group_rel:.0%}, a single scenario by at most the larger of {cap_abs:g} points or {cap_rel:.0%}.")
+
+
+def build_prompt(current_code, best_score, traces, context_relations, best_val_score=None, previous_attempts=None,
+                 gen_idx=None):
     """Run-invariant content first (cached by DeepSeek's prefix cache), the
     per-generation state last."""
     sample = DEV_BATTERY[0]
@@ -400,8 +470,9 @@ Score = {w['production_iae_l']:g} * production off target (integral of |Q - targ
       + {w['exceptions']:g} * exceptions or timeouts of your function
 The scenarios are grouped by disturbance type (nominal = production-target changes only; feed;
 pump; split; combined). Promotion requires a better battery average, AND for every type a mean
-score no worse than the champion's by more than the larger of {GROUP_ABS_TOLERANCE:g} points or {GROUP_REL_TOLERANCE:.0%}, AND no
-single scenario worse than the champion's by more than the larger of {SCENARIO_CAP_ABS:g} points or {SCENARIO_CAP_REL:.0%}.
+score no worse than the champion's by more than a tolerance, AND no single scenario worse than the
+champion's by more than a cap. Both start loose and tighten over the generations:
+{_guard_schedule_text()}
 
 TASK:
 1. Diagnose what causes the worst-scoring scenarios, using the traces and the plant description: how does each disturbance move the pump voltages and upper levels, and which objective is violated?
@@ -431,6 +502,7 @@ Current supervisor source:
 ```
 
 Current battery score: {best_score:.1f}. {gen_check}
+{_guard_rule_text(gen_idx)}
 
 Per-scenario results (score | litres off target | seconds h2 outside band | seconds upper level above
 limit | setpoint travel | recovery time):
@@ -574,19 +646,32 @@ def _group_means(traces):
     return {kind: float(np.mean(scores)) for kind, scores in groups.items()}
 
 
-def find_regression(best_traces, cand_traces):
-    """Reason string if the candidate regresses a disturbance type's mean or
-    wrecks a single scenario (see GROUP_* and SCENARIO_CAP_*), else None."""
+def find_regression(best_traces, cand_traces, gen_idx):
+    """(reason, scenario) if the candidate regresses a disturbance type's mean
+    or wrecks a single scenario under this generation's tolerances (see
+    GUARD_SCHEDULE), else (None, None). The scenario is the one whose trace is
+    shown in the next prompt: the capped scenario, or the scenario of the
+    regressed type that got worst."""
+    group_abs, group_rel, cap_abs, cap_rel = guard_tolerances(gen_idx)
     best_groups, cand_groups = _group_means(best_traces), _group_means(cand_traces)
     for kind, best_mean in best_groups.items():
-        allowed = max(GROUP_ABS_TOLERANCE, GROUP_REL_TOLERANCE * best_mean)
+        allowed = max(group_abs, group_rel * best_mean)
         if cand_groups[kind] > best_mean + allowed:
-            return f"'{kind}' disturbances got worse on average: {best_mean:.1f} -> {cand_groups[kind]:.1f}"
+            pairs = [(b, c) for b, c in zip(best_traces, cand_traces) if _KIND_BY_NAME.get(b["scenario"], "other") == kind]
+            worst = max(pairs, key=lambda bc: bc[1]["score"] - bc[0]["score"])[0]["scenario"]
+            return (f"'{kind}' disturbances got worse on average: {best_mean:.1f} -> {cand_groups[kind]:.1f}, "
+                    f"allowed +{allowed:.0f}"), worst
     for b, c in zip(best_traces, cand_traces):
-        allowed = max(SCENARIO_CAP_ABS, SCENARIO_CAP_REL * b["score"])
+        allowed = max(cap_abs, cap_rel * b["score"])
         if c["score"] > b["score"] + allowed:
-            return f"{b['scenario']} got much worse: {b['score']:.1f} -> {c['score']:.1f}"
-    return None
+            return f"{b['scenario']} got much worse: {b['score']:.1f} -> {c['score']:.1f}, allowed +{allowed:.0f}", b["scenario"]
+    return None, None
+
+
+def worst_regression(best_traces, cand_traces):
+    """Scenario where the candidate lost most against the champion, or None if it lost nowhere."""
+    b, c = max(zip(best_traces, cand_traces), key=lambda bc: bc[1]["score"] - bc[0]["score"])
+    return b["scenario"] if c["score"] > b["score"] else None
 
 
 def _use_run(run_name):
@@ -807,8 +892,11 @@ def main():
         gen_idx = start_gen + g
         print(f"\n=== Generation {g + 1}/{num_generations} (gen_{gen_idx}): sampling {CANDIDATES_PER_GENERATION} candidates "
               f"from {model} at reasoning effort {effort} ===")
+        group_abs, group_rel, cap_abs, cap_rel = guard_tolerances(gen_idx)
+        print(f"[GUARD] gen_{gen_idx}: type mean +max({group_abs:g}, {group_rel:.0%}), "
+              f"single scenario +max({cap_abs:g}, {cap_rel:.0%})")
         prompt = build_prompt(current_code, best_score, best_traces, load_context_report(),
-                              best_val_score=best_val_score, previous_attempts=previous_attempts)
+                              best_val_score=best_val_score, previous_attempts=previous_attempts, gen_idx=gen_idx)
         with ThreadPoolExecutor(max_workers=CANDIDATES_PER_GENERATION) as pool:
             responses = list(pool.map(lambda _: call_llm(prompt, model=model, reasoning_effort=effort),
                                       range(CANDIDATES_PER_GENERATION)))
@@ -826,10 +914,14 @@ def main():
             if r["decision"] != "SCORED":
                 print(f"  c{r['candidate']}: [{r['decision']}] {r.get('reason')}")
                 continue
+            # Champion score on every scenario, so the next prompt can put a
+            # non-promoted candidate's worst scenario next to the champion's.
+            r["champion_scores"] = {t["scenario"]: t["score"] for t in best_traces}
             if r["score"] >= best_score:
                 r["decision"] = "ROLLBACK"
+                r["failed_scenario"] = worst_regression(best_traces, r["traces"])
             else:
-                regression = find_regression(best_traces, r["traces"])
+                regression, r["failed_scenario"] = find_regression(best_traces, r["traces"], gen_idx)
                 if regression:
                     r["decision"] = "REJECTED_REGRESSION"
                     r["reason"] = regression
