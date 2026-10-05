@@ -99,6 +99,14 @@ SUPERVISORS_DIR = CURRENT_SUPERVISOR_PATH = RESULTS_DIR = None
 EVALUATIONS_PATH = TRIALS_PATH = CONTEXT_REPORT_PATH = SUMMARY_CSV_PATH = FINAL_REPORT_PATH = None
 RUN_LOG_PATH = INVOCATIONS_PATH = None
 MAX_CONTEXT_RELATIONS = 12
+# Lessons (relations_learned) are kept only from promoted candidates. The model
+# writes them in the same reply as its code, before it is scored; until
+# 2026-10-05 the best non-promoted candidate's lessons were also kept when
+# nothing was promoted, and in window600_onechange those lessons pointed at the
+# change that had just failed (averaging the feed-load estimate). What failed
+# is now recorded by the trainer instead: one measured line per candidate, all
+# generations of the run (see _history_block), at most MAX_HISTORY_ENTRIES.
+MAX_HISTORY_ENTRIES = 30
 MAX_RELATIONS_PER_GENERATION = 2
 MAX_RELATION_WORDS = 30
 
@@ -246,12 +254,12 @@ def load_context_report(max_relations=MAX_CONTEXT_RELATIONS):
     return relations[-max_relations:]
 
 
-def append_context_report(trial_idx, relations):
+def append_context_report(trial_idx, relations, candidate=None):
     if not relations:
         return
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(CONTEXT_REPORT_PATH, "a", encoding="utf-8") as f:
-        f.write(json.dumps({"trial": trial_idx, "relations": relations}) + "\n")
+        f.write(json.dumps({"trial": trial_idx, "candidate": candidate, "relations": relations}) + "\n")
 
 
 def append_evaluation(traces, run_label):
@@ -379,6 +387,40 @@ def _failure_traces_block(attempts):
             "reusing its idea.\n" + "\n\n".join(parts) + "\n")
 
 
+def _history_block():
+    """One measured line per earlier candidate of this run, from the trial log:
+    its change, its average against the champion it was compared with, and the
+    scenario it gained and lost most on."""
+    lines = []
+    for t in _read_trials()[-MAX_HISTORY_ENTRIES:]:
+        change = str(t.get("proposed_change") or "")[:300]
+        line = f"- gen {t['trial']} c{t.get('candidate')} {t['decision']}: {change}"
+        if t.get("score") is None:
+            line += f" | {str(t.get('reason') or '')[:120]}"
+        else:
+            line += (f" | avg {t['champion_score']:.1f} -> {t['score']:.1f}" if t.get("champion_score") is not None
+                     else f" | avg {t['score']:.1f}")
+            for key, label in (("biggest_gain", "gained most"), ("biggest_loss", "lost most")):
+                d = t.get(key)
+                if d:
+                    line += f" | {label} {d['scenario']} {d['champion']:.0f} -> {d['candidate']:.0f}"
+        lines.append(line)
+    if not lines:
+        return ""
+    return ("\nCHANGES TRIED SO FAR IN THIS RUN (measured by the trainer, oldest first; avg = battery score of the "
+            "champion it was compared with -> the candidate's). HARD CONSTRAINT: do not resubmit a change listed as not "
+            "PROMOTED; build on one only if your change removes the loss it caused, and say how in proposed_change.\n"
+            + "\n".join(lines) + "\n")
+
+
+def _biggest_changes(best_traces, cand_traces):
+    """(scenario gained most, scenario lost most) against the champion, None if there is none."""
+    diffs = [(c["score"] - b["score"], b["scenario"], b["score"], c["score"]) for b, c in zip(best_traces, cand_traces)]
+    as_dict = lambda d: {"scenario": d[1], "champion": round(d[2], 1), "candidate": round(d[3], 1)}
+    gain, loss = min(diffs), max(diffs)
+    return (as_dict(gain) if gain[0] < 0 else None), (as_dict(loss) if loss[0] > 0 else None)
+
+
 def _results_block(traces):
     """Means per disturbance type, then one compact line per scenario:
     score | litres off target | seconds h2 outside band | seconds upper level
@@ -483,7 +525,7 @@ TASK:
 1. Diagnose what causes the worst-scoring scenarios, using the traces and the plant description: how does each disturbance move the pump voltages and upper levels, and which objective is violated?
 2. Make ONE targeted change to the current supervisor that addresses what your diagnosis found, so that production stays on target and the constraints hold, using the free degree of freedom, without moving the setpoints more than needed. One change = one mechanism (for example how a disturbance is estimated, how oscillations are handled, how the setpoint pair is chosen, a filter or a threshold); it may span several lines. Keep the rest of the current code as it is - its structure, helper functions and constants - unless the change has to touch them. Do not rewrite the function from scratch: rewrites tend to fix one scenario and break others, as the previous attempts below show, and one change at a time shows which change caused a score difference.
 3. In "self_check", state in 2-4 sentences how your logic keeps production on target and the constraints satisfied when a disturbance pushes an upper level toward its limit or a pump toward saturation. Do not solve the mass balances by hand; if your logic needs steady-state relations, compute them in the code.
-4. Add at most {MAX_RELATIONS_PER_GENERATION} NEW generalizable cause-effect relations this result reveals, each ONE sentence of at most {MAX_RELATION_WORDS} words. Do not repeat a listed one.
+4. Add at most {MAX_RELATIONS_PER_GENERATION} NEW generalizable cause-effect relations your change relies on, each ONE sentence of at most {MAX_RELATION_WORDS} words. They are kept as lessons for later generations only if your change is promoted. Do not repeat a listed one.
 
 OUTPUT FORMAT - strictly this JSON:
 {{
@@ -520,9 +562,10 @@ one row per minute while something stays wrong. t = absolute simulation time (yo
 (L/s); h = [h1, h2, h3, h4] (m); v = [v1, v2] (V); sp = setpoints returned; disturbance = the TRUE
 active disturbance (shown here only for diagnosis; your function cannot see it).
 {trace_block}
-{_attempts_block(previous_attempts)}
-LESSONS LEARNED by earlier attempts. HARD CONSTRAINT: do not repeat a change a lesson says
-failed, and do not reintroduce a bug pattern a lesson identifies:
+{_history_block()}{_attempts_block(previous_attempts)}
+LESSONS LEARNED: cause-effect relations written by the model behind each PROMOTED change. They are
+consistent with a measured improvement but not proven; where a measured result above contradicts
+one, trust the measurement:
 {chr(10).join('- ' + r for r in context_relations) if context_relations else "(none recorded yet)"}
 
 Respond with the JSON object described under OUTPUT FORMAT.
@@ -643,7 +686,8 @@ def code_change(old, new):
 
 
 def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, reason=None, validation_score=None,
-              self_check=None, candidate=None, reasoning_effort=None, usage=None, model=None, code_change=None):
+              self_check=None, candidate=None, reasoning_effort=None, usage=None, model=None, code_change=None,
+              measured=None):
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(TRIALS_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps({
@@ -652,6 +696,7 @@ def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, rea
             "decision": decision, "score": score, "validation_score": validation_score,
             "failure_analysis": failure_analysis, "self_check": self_check,
             "proposed_change": proposed_change, "reason": reason, "code_change": code_change,
+            **(measured or {}),
         }) + "\n")
 
 
@@ -996,6 +1041,8 @@ def main():
             # Champion score on every scenario, so the next prompt can put a
             # non-promoted candidate's worst scenario next to the champion's.
             r["champion_scores"] = {t["scenario"]: t["score"] for t in best_traces}
+            gain, loss = _biggest_changes(best_traces, r["traces"])
+            r["measured"] = {"champion_score": round(best_score, 3), "biggest_gain": gain, "biggest_loss": loss}
             if r["score"] >= best_score:
                 r["decision"] = "ROLLBACK"
                 r["failed_scenario"] = worst_regression(best_traces, r["traces"])
@@ -1023,7 +1070,8 @@ def main():
                 save_candidate_only(r["code"], gen_idx, r["candidate"])
             log_trial(gen_idx, r["decision"], r["score"], r.get("failure_analysis"), r.get("proposed_change"),
                       reason=r.get("reason"), self_check=r.get("self_check"), candidate=r["candidate"],
-                      reasoning_effort=effort, usage=r["usage"], model=model, code_change=r.get("code_change"))
+                      reasoning_effort=effort, usage=r["usage"], model=model, code_change=r.get("code_change"),
+                      measured=r.get("measured"))
 
         if winner is not None:
             promote(winner["code"], gen_idx, winner["candidate"])
@@ -1034,16 +1082,14 @@ def main():
             log_trial(gen_idx, "PROMOTED", winner["score"], winner["failure_analysis"], winner["proposed_change"],
                       validation_score=best_val_score, self_check=winner["self_check"], candidate=winner["candidate"],
                       reasoning_effort=effort, usage=winner["usage"], model=model,
-                      code_change=winner.get("code_change"))
+                      code_change=winner.get("code_change"), measured=winner.get("measured"))
         else:
             print(f"[NO PROMOTION] champion stays at {best_score:.3f}")
 
-        scored = [r for r in records if r.get("score") is not None]
-        source = winner or (min(scored, key=lambda r: r["score"]) if scored else None)
-        if source is not None and source.get("relations"):
-            relations = source["relations"][:MAX_RELATIONS_PER_GENERATION]
+        if winner is not None and winner.get("relations"):
+            relations = winner["relations"][:MAX_RELATIONS_PER_GENERATION]
             print(f"[LEARNED] {relations}")
-            append_context_report(gen_idx, relations)
+            append_context_report(gen_idx, relations, candidate=winner["candidate"])
 
         previous_attempts = [r for r in records if r is not winner]
 

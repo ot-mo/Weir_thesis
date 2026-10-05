@@ -45,4 +45,7 @@ oracle MPC 192.9 / 191.1 / 1110.9.
 - Up to `window600_onechange`, when no candidate was promoted the trainer still saved the best
   non-promoted candidate's lessons. These were written before scoring and several describe
   changes that made the score worse (e.g. averaging the feed-load estimate), so the lessons in
-  these runs' `context_report.jsonl` are hypotheses, not verified findings.
+  these runs' `context_report.jsonl` are hypotheses, not verified findings. From the next run
+  on, lessons are kept only from promoted candidates, and the trainer records every other
+  candidate as a measured line in `trials.jsonl` (`champion_score`, `biggest_gain`,
+  `biggest_loss`) that the prompt lists for the whole run.

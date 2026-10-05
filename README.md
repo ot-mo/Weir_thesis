@@ -240,7 +240,11 @@ the scenario each lost most on. Each candidate must make one targeted change
 to the champion (one mechanism, the rest of the code kept), and the share of the
 champion's lines it kept is logged: in the first guard-schedule run, before
 this rule, candidates kept 16-65% of the champion and added 107-272 lines. The
-beyond-range battery is never shown to the LLM and only appears in the report,
+model's own lessons (cause-effect relations) are kept only from promoted
+candidates; every other candidate is recorded by the trainer as one measured line
+(its change, average against the champion, scenario gained and lost most on),
+and the prompt lists all of them for the run so failed changes are not repeated.
+The beyond-range battery is never shown to the LLM and only appears in the report,
 next to the baselines on identical scenarios.
 
 | Battery (42 / 42 / 36 scenarios) | Fixed recipe | MPC (estimated) | MPC (oracle) |
