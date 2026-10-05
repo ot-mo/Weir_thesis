@@ -2,11 +2,16 @@
 meta-supervisor writes a deterministic supervise() function that only moves
 the PI setpoints, as in the goal document's grinding-circuit experiment.
 
-Run manually: python train_supervisor_coordination.py [num_generations] [--model NAME] [--effort LEVEL] [--run NAME]
+Run manually: python train_supervisor_coordination.py [num_generations] --run NAME [--from RUN] [--model NAME] [--effort LEVEL]
+  --run: required; every run has its own folders, generated_supervisors_coordination/NAME/ (candidates,
+         champion) and results/coordination/NAME/ (trial log, evaluations, lessons, run log, report).
+         An existing run continues where it stopped.
+  --from: seed a NEW run with RUN's champion instead of the fixed recipe (generation numbers restart at 1)
   --model: deepseek-flash (default), gpt-6-luna or gpt-6.1-sol (OPENAI_API_KEY in .env)
   --effort: reasoning effort, default low (DeepSeek: none|low|high|max; Luna: none|low|medium|high|xhigh|max;
             Sol: low|medium|high|xhigh|max)
-Report only, no API calls: python train_supervisor_coordination.py --report [--run NAME]
+Report only, no API calls: python train_supervisor_coordination.py --report --run NAME
+Index of all runs: results/coordination/README.md
 
 A copy of train_supervisor_four_tank.py (which stays as it is for the leak
 task) with the same loop - parallel candidates, security gate, elitist
@@ -31,6 +36,7 @@ import difflib
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -86,15 +92,12 @@ REQUIRED_ARGS = ("telemetry_window", "active_setpoints", "objectives")
 
 BASE_SUPERVISORS_DIR = "generated_supervisors_coordination"
 SEED_SUPERVISOR_PATH = os.path.join(BASE_SUPERVISORS_DIR, "supervisor_gen_0.py")
-SUPERVISORS_DIR = BASE_SUPERVISORS_DIR
-CURRENT_SUPERVISOR_PATH = os.path.join(SUPERVISORS_DIR, "current_supervisor.py")
-RESULTS_DIR = "results"
-EVALUATIONS_PATH = os.path.join(RESULTS_DIR, "evaluations_coordination.jsonl")
-TRIALS_PATH = os.path.join(RESULTS_DIR, "supervisor_training_trials_coordination.jsonl")
-CONTEXT_REPORT_PATH = os.path.join(RESULTS_DIR, "context_report_coordination.jsonl")
-SUMMARY_CSV_PATH = os.path.join(RESULTS_DIR, "summary_coordination.csv")
-FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, "final_report_coordination.md")
-BASELINES_CSV_PATH = os.path.join(RESULTS_DIR, "coordination_baselines.csv")
+BASE_RESULTS_DIR = os.path.join("results", "coordination")
+BASELINES_CSV_PATH = os.path.join(BASE_RESULTS_DIR, "baselines.csv")
+# Per-run paths, set by _use_run().
+SUPERVISORS_DIR = CURRENT_SUPERVISOR_PATH = RESULTS_DIR = None
+EVALUATIONS_PATH = TRIALS_PATH = CONTEXT_REPORT_PATH = SUMMARY_CSV_PATH = FINAL_REPORT_PATH = None
+RUN_LOG_PATH = INVOCATIONS_PATH = None
 MAX_CONTEXT_RELATIONS = 12
 MAX_RELATIONS_PER_GENERATION = 2
 MAX_RELATION_WORDS = 30
@@ -687,25 +690,65 @@ def worst_regression(best_traces, cand_traces):
     return b["scenario"] if c["score"] > b["score"] else None
 
 
-def _use_run(run_name):
-    """Separate named experiment (own candidates, lessons and logs), seeded
-    with gen_0 the first time - e.g. for independent repeated runs (C3)."""
-    global SUPERVISORS_DIR, CURRENT_SUPERVISOR_PATH, EVALUATIONS_PATH, TRIALS_PATH
-    global CONTEXT_REPORT_PATH, SUMMARY_CSV_PATH, FINAL_REPORT_PATH
+def _existing_runs():
+    return sorted(d for d in os.listdir(BASE_SUPERVISORS_DIR) if os.path.isdir(os.path.join(BASE_SUPERVISORS_DIR, d)))
+
+
+def _use_run(run_name, seed_from=None):
+    """Point every path at the run's own folders. A new run is seeded with the
+    fixed recipe (gen_0), or with another run's champion if seed_from is given.
+    Returns the seed's path for a new run, None for an existing one."""
+    global SUPERVISORS_DIR, CURRENT_SUPERVISOR_PATH, RESULTS_DIR, EVALUATIONS_PATH, TRIALS_PATH
+    global CONTEXT_REPORT_PATH, SUMMARY_CSV_PATH, FINAL_REPORT_PATH, RUN_LOG_PATH, INVOCATIONS_PATH
     SUPERVISORS_DIR = os.path.join(BASE_SUPERVISORS_DIR, run_name)
     CURRENT_SUPERVISOR_PATH = os.path.join(SUPERVISORS_DIR, "current_supervisor.py")
-    suffix = f"coordination_{run_name}"
-    EVALUATIONS_PATH = os.path.join(RESULTS_DIR, f"evaluations_{suffix}.jsonl")
-    TRIALS_PATH = os.path.join(RESULTS_DIR, f"supervisor_training_trials_{suffix}.jsonl")
-    CONTEXT_REPORT_PATH = os.path.join(RESULTS_DIR, f"context_report_{suffix}.jsonl")
-    SUMMARY_CSV_PATH = os.path.join(RESULTS_DIR, f"summary_{suffix}.csv")
-    FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, f"final_report_{suffix}.md")
+    RESULTS_DIR = os.path.join(BASE_RESULTS_DIR, run_name)
+    EVALUATIONS_PATH = os.path.join(RESULTS_DIR, "evaluations.jsonl")
+    TRIALS_PATH = os.path.join(RESULTS_DIR, "trials.jsonl")
+    CONTEXT_REPORT_PATH = os.path.join(RESULTS_DIR, "context_report.jsonl")
+    SUMMARY_CSV_PATH = os.path.join(RESULTS_DIR, "summary.csv")
+    FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, "final_report.md")
+    RUN_LOG_PATH = os.path.join(RESULTS_DIR, "run_log.txt")
+    INVOCATIONS_PATH = os.path.join(RESULTS_DIR, "invocations.jsonl")
     os.makedirs(SUPERVISORS_DIR, exist_ok=True)
-    if not os.path.exists(CURRENT_SUPERVISOR_PATH):
-        with open(SEED_SUPERVISOR_PATH, "r", encoding="utf-8") as src, \
-                open(CURRENT_SUPERVISOR_PATH, "w", encoding="utf-8") as dst:
-            dst.write(src.read())
-        print(f"[RUN] new run '{run_name}' seeded with {SEED_SUPERVISOR_PATH}")
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    if os.path.exists(CURRENT_SUPERVISOR_PATH):
+        if seed_from:
+            print(f"[CRITICAL] run '{run_name}' already exists; --from only seeds a new run")
+            sys.exit(1)
+        return None
+    seed_path = os.path.join(BASE_SUPERVISORS_DIR, seed_from, "current_supervisor.py") if seed_from else SEED_SUPERVISOR_PATH
+    if not os.path.exists(seed_path):
+        print(f"[CRITICAL] no champion to seed from at {seed_path}")
+        sys.exit(1)
+    with open(seed_path, "r", encoding="utf-8") as src, open(CURRENT_SUPERVISOR_PATH, "w", encoding="utf-8") as dst:
+        dst.write(src.read())
+    print(f"[RUN] new run '{run_name}' seeded with {seed_path}")
+    return seed_path
+
+
+class _Tee:
+    """Console output also goes to the run's run_log.txt."""
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, text):
+        for stream in self.streams:
+            stream.write(text)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+
+def _git_commit():
+    """Commit the run's code came from, marked if trainer code had uncommitted changes."""
+    try:
+        commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", "*.py"], capture_output=True, text=True).stdout.strip()
+    except OSError:
+        return None
+    return (commit + ("+uncommitted" if dirty else "")) if commit else None
 
 
 def _next_trial_start():
@@ -859,15 +902,20 @@ def _evaluate_candidate(response, usage, candidate, gen_idx):
 def main():
     option = lambda name, default: sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
     run_name = option("--run", None)
-    if run_name:
-        _use_run(run_name)
-    elif not os.path.exists(CURRENT_SUPERVISOR_PATH):
-        with open(SEED_SUPERVISOR_PATH, "r", encoding="utf-8") as src, \
-                open(CURRENT_SUPERVISOR_PATH, "w", encoding="utf-8") as dst:
-            dst.write(src.read())
+    if not run_name:
+        print("[CRITICAL] name the run with --run NAME (a new name starts a new run, an existing one continues). "
+              f"Existing runs: {', '.join(_existing_runs()) or 'none'}")
+        sys.exit(1)
     if "--report" in sys.argv:
+        if not os.path.isdir(os.path.join(BASE_SUPERVISORS_DIR, run_name)):
+            print(f"[CRITICAL] no run named '{run_name}'. Existing runs: {', '.join(_existing_runs())}")
+            sys.exit(1)
+        _use_run(run_name)
         generate_report()
         return
+    seeded_from = _use_run(run_name, seed_from=option("--from", None))
+    sys.stdout = _Tee(sys.__stdout__, open(RUN_LOG_PATH, "a", encoding="utf-8", buffering=1))
+    print(f"\n##### {datetime.now().isoformat(timespec='seconds')} run '{run_name}' #####")
 
     num_generations = next((int(a) for a in sys.argv[1:] if a.isdigit()), 4)
     model = option("--model", MODEL_DEFAULT)
@@ -881,6 +929,12 @@ def main():
             print(f"[CRITICAL] {model} does not accept reasoning effort '{effort}'; use one of {', '.join(allowed)}")
             sys.exit(1)
     start_gen = _next_trial_start()
+    with open(INVOCATIONS_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                            "git_commit": _git_commit(), "model": model, "reasoning_effort": effort,
+                            "generations": num_generations, "candidates_per_generation": CANDIDATES_PER_GENERATION,
+                            "start_gen": start_gen,
+                            "seeded_from": seeded_from.replace(os.sep, "/") if seeded_from else None}) + "\n")
 
     with open(CURRENT_SUPERVISOR_PATH, "r", encoding="utf-8") as f:
         current_code = f.read()

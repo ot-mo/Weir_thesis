@@ -216,9 +216,15 @@ IAE, constraint-violation time, setpoint total variation and recovery time.
 
 ```bash
 python benchmark_coordination.py [per_cell]   # fixed recipe vs MPC vs oracle MPC, no API calls
-python train_supervisor_coordination.py [num_generations] [--model deepseek-flash|gpt-6-luna|gpt-6.1-sol] [--effort low] [--run NAME]  # LLM meta-supervisor (billed)
-python train_supervisor_coordination.py --report [--run NAME]                           # champion vs baselines, no API calls
+python train_supervisor_coordination.py [num_generations] --run NAME [--from RUN] [--model deepseek-flash|gpt-6-luna|gpt-6.1-sol] [--effort low]  # LLM meta-supervisor (billed)
+python train_supervisor_coordination.py --report --run NAME                             # champion vs baselines, no API calls
 ```
+
+Every run is named and has its own folders, `generated_supervisors_coordination/NAME/`
+and `results/coordination/NAME/`; a new name starts from the fixed recipe (or from
+another run's champion with `--from RUN`), an existing name continues.
+[results/coordination/README.md](results/coordination/README.md) lists all runs with
+their setup, cost and champion scores.
 
 [train_supervisor_coordination.py](train_supervisor_coordination.py) is a copy of
 the four-tank trainer (which stays as it is for the leak task): the LLM writes
@@ -243,12 +249,9 @@ next to the baselines on identical scenarios.
 | Held-out development | 479 | 194 | 191 |
 | Beyond development range | 1,583 | 1,124 | 1,111 |
 
-Runs on the earlier setup (50 s window, one scenario per cell, per-scenario
-guard) are archived under `window50_*`. Their best champion scores 226 / 242 /
-1,277 on these batteries. The first 600 s run (fixed guard, before the schedule
-and the failure traces) is in `window600_default` and `results/coordination_window600/`:
-no promotion in 3 generations, as every candidate that beat the seed was rejected
-by the guard.
+The best champion so far scores 226 / 242 / 1,277 (`window50_run2`, re-scored on
+these batteries); the best 600 s champion 231.5 / 247.5 / 1,339
+(`window600_guardschedule`). See the runs index for all of them.
 
 ## Status / open threads
 

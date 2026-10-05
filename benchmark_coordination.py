@@ -5,7 +5,7 @@ Run: python benchmark_coordination.py [per_cell]   (default 3, as in the trainer
 Evaluates the fixed recipe (PID only), the MPC supervisor with an estimated
 disturbance, and the oracle MPC on three seeded batteries - development,
 held-out development (same ranges, new seeds) and beyond the development
-range - and writes per-episode metrics to results/coordination_baselines.csv.
+range - and writes per-episode metrics to results/coordination/baselines.csv.
 """
 
 import csv
@@ -19,7 +19,7 @@ import numpy as np
 import four_tank_coordination as C
 from mpc_supervisor import MPCSupervisor
 
-OUTPUT_PATH = os.path.join("results", "coordination_baselines.csv")
+OUTPUT_PATH = os.path.join("results", "coordination", "baselines.csv")
 CONTROLLERS = ("fixed_recipe", "mpc_estimated", "mpc_oracle")
 BATTERY_SEEDS = {"dev": 1, "heldout": 2, "beyond": 3}
 METRICS = ("production_iae_l", "band_violation_s", "upper_violation_s", "safety_violation_s",
@@ -52,7 +52,7 @@ def main():
     with ProcessPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) - 1)) as pool:
         rows = list(pool.map(_run, jobs))
 
-    os.makedirs("results", exist_ok=True)
+    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     with open(OUTPUT_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
