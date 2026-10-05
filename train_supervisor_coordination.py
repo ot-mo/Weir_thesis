@@ -768,7 +768,6 @@ def _use_run(run_name, seed_from=None):
         sys.exit(1)
     with open(seed_path, "r", encoding="utf-8") as src, open(CURRENT_SUPERVISOR_PATH, "w", encoding="utf-8") as dst:
         dst.write(src.read())
-    print(f"[RUN] new run '{run_name}' seeded with {seed_path}")
     return seed_path
 
 
@@ -961,6 +960,8 @@ def main():
     seeded_from = _use_run(run_name, seed_from=option("--from", None))
     sys.stdout = _Tee(sys.__stdout__, open(RUN_LOG_PATH, "a", encoding="utf-8", buffering=1))
     print(f"\n##### {datetime.now().isoformat(timespec='seconds')} run '{run_name}' #####")
+    if seeded_from:
+        print(f"[RUN] new run, seeded with {seeded_from}")
 
     num_generations = next((int(a) for a in sys.argv[1:] if a.isdigit()), 4)
     model = option("--model", MODEL_DEFAULT)
