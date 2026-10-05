@@ -1,0 +1,27 @@
+
+##### 2026-10-05T14:50:31 run 'window600_high' #####
+[RUN] new run, seeded with generated_supervisors_coordination\window600_measured\current_supervisor.py
+[BASELINE] current_supervisor.py avg score: 231.503 (held-out: 247.461)
+
+=== Generation 1/2 (gen_1): sampling 3 candidates from deepseek-flash at reasoning effort high ===
+[GUARD] gen_1: type mean +max(10, 25%), single scenario +max(300, 150%)
+[TOKENS] 3 requests: prompt 53478 (cache hit 0), completion 243868 (reasoning 234033), est. $0.154
+  c1: score 231.230 (champion 231.503) -> ELIGIBLE [kept 94% of the champion's lines, +41/-11]
+  c2: score 230.328 (champion 231.503) -> ELIGIBLE [kept 99% of the champion's lines, +21/-2]
+  c3: score 298.895 (champion 231.503) -> ROLLBACK [kept 99% of the champion's lines, +43/-1]
+[PROMOTED] gen_1 candidate 2 is the new current_supervisor.py
+[VALIDATION] held-out score: 226.203 (dev score: 230.328)
+[LEARNED] ['During oscillations the upper tanks store flow, so dividing their outflow by the split misreads that storage as a pump-gain loss.', 'A pump-gain estimate biased low makes the optimizer shift production away from that pump, loading the other pump and raising its upper tank level.']
+
+=== Generation 2/2 (gen_2): sampling 3 candidates from deepseek-flash at reasoning effort high ===
+[GUARD] gen_2: type mean +max(10, 25%), single scenario +max(300, 150%)
+[TOKENS] 3 requests: prompt 60462 (cache hit 9216), completion 237290 (reasoning 226757), est. $0.150
+  c1: score 512.830 (champion 230.328) -> ROLLBACK [kept 83% of the champion's lines, +59/-33]
+  c2: score 230.971 (champion 230.328) -> ROLLBACK [kept 98% of the champion's lines, +12/-4]
+  c3: score 227.426 (champion 230.328) -> ELIGIBLE [kept 98% of the champion's lines, +43/-4]
+[PROMOTED] gen_2 candidate 3 is the new current_supervisor.py
+[VALIDATION] held-out score: 229.168 (dev score: 227.426)
+[LEARNED] ["A load estimate built from the upper-tank outflows lags a swinging disturbance by the upper tank's storage time constant, so the split compensation arrives a half-cycle late.", 'An upward split trim needs 4/3 of its flow from pump 2 and lifts tank 3 by about 155 m per m3/s, so it must be bounded by tank-3 headroom.']
+
+[DONE] Final best score: 227.426. current_supervisor.py reflects the best candidate found.
+[SUCCESS] Report written to results\coordination\window600_high\final_report.md and results\coordination\window600_high\summary.csv

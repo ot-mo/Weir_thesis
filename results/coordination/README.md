@@ -11,7 +11,7 @@ on the four-tank setpoint-coordination test bed. Each run has two folders with t
   `final_report.md`, and from the run-folder layout on `invocations.jsonl` (settings and git commit of each start).
 
 `baselines.csv` holds the fixed recipe, MPC and oracle MPC on the same scenarios
-(`python benchmark_coordination.py`). All runs used deepseek-flash at reasoning effort low.
+(`python benchmark_coordination.py`). All runs used deepseek-flash, at reasoning effort low unless the table says otherwise.
 
 ## Runs
 
@@ -31,6 +31,7 @@ Champion scores are re-scored on the current batteries (600 s window, 3 scenario
 | `window600_guardschedule` | 2026-10-05 | Guard loose in gens 1-2, tighter in 3-4 and from 5; failure traces of non-promoted candidates in the prompt | 4 x 3 | 1 | $0.42 | 231.5 / 247.5 / 1339.3 |
 | `window600_onechange` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion; one targeted change per candidate | 3 x 3 (gens 5-7) | 0 | $0.11 | 231.5 / 247.5 / 1339.3 (seed) |
 | `window600_measured` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion (`--from`); lessons only from promoted candidates, measured record of every tried change in the prompt | 3 x 3 | 0 | $0.21 | 231.5 / 247.5 / 1339.3 (seed) |
+| `window600_high` | 2026-10-05 | Seeded with `window600_measured`'s champion, inheriting its 9 measured attempts; reasoning effort **high** | 2 x 3 | 2 | $0.30 | **227.4 / 229.2 / 1181.4** |
 
 Baselines on the same batteries: fixed recipe 533.4 / 478.7 / 1583.0, MPC 203.7 / 193.8 / 1123.6,
 oracle MPC 192.9 / 191.1 / 1110.9.
