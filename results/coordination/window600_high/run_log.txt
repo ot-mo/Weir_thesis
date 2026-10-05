@@ -25,3 +25,29 @@
 
 [DONE] Final best score: 227.426. current_supervisor.py reflects the best candidate found.
 [SUCCESS] Report written to results\coordination\window600_high\final_report.md and results\coordination\window600_high\summary.csv
+
+##### 2026-10-05T22:15:26 run 'window600_high' #####
+[BASELINE] current_supervisor.py avg score: 227.426 (held-out: 229.168)
+
+=== Generation 1/2 (gen_3): sampling 3 candidates from deepseek-flash at reasoning effort high ===
+[GUARD] gen_3: type mean +max(10, 15%), single scenario +max(200, 100%)
+[TOKENS] 3 requests: prompt 60678 (cache hit 9216), completion 248715 (reasoning 235969), est. $0.157
+  c1: score 212.355 (champion 227.426) -> ELIGIBLE [kept 95% of the champion's lines, +34/-12]
+  c2: score 325.468 (champion 227.426) -> ROLLBACK [kept 89% of the champion's lines, +35/-26]
+  c3: score 294.126 (champion 227.426) -> ROLLBACK [kept 94% of the champion's lines, +50/-14]
+[PROMOTED] gen_3 candidate 1 is the new current_supervisor.py
+[VALIDATION] held-out score: 221.007 (dev score: 212.355)
+[LEARNED] ['The measured production error is in phase with the flow disturbance, but a setpoint change needs 1.5-2 minutes to reach the product, so a proportional error trim corrects each swing after its trough.', 'Extrapolating the production error one plant lag ahead with its own 90 s slope, but forcing the prediction never to change the sign of the measured error, anticipates a swing without harming step responses.']
+
+=== Generation 2/2 (gen_4): sampling 3 candidates from deepseek-flash at reasoning effort high ===
+[GUARD] gen_4: type mean +max(10, 15%), single scenario +max(200, 100%)
+[TOKENS] 3 requests: prompt 74136 (cache hit 13824), completion 273397 (reasoning 260387), est. $0.173
+  c1: score 206.273 (champion 212.355) -> ELIGIBLE [kept 94% of the champion's lines, +24/-14]
+  c2: score 213.354 (champion 212.355) -> ROLLBACK [kept 95% of the champion's lines, +11/-13]
+  c3: score 208.054 (champion 212.355) -> ELIGIBLE [kept 95% of the champion's lines, +57/-13]
+[PROMOTED] gen_4 candidate 1 is the new current_supervisor.py
+[VALIDATION] held-out score: 214.912 (dev score: 206.273)
+[LEARNED] ["A fixed post-setpoint-change hold of 45 s staircases the supervisor's update rate at ~50 s, so during a several-minute oscillation the split compensation lags the load by about a half cycle.", 'Shortening that hold lets the split track a swinging disturbance more finely, whereas lengthening it (100 s) was measured to worsen production for every disturbance type.']
+
+[DONE] Final best score: 206.273. current_supervisor.py reflects the best candidate found.
+[SUCCESS] Report written to results\coordination\window600_high\final_report.md and results\coordination\window600_high\summary.csv

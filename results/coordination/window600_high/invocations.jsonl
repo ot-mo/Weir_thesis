@@ -1,1 +1,2 @@
 {"started": "2026-10-05T12:50:31+00:00", "git_commit": "6a7d20b", "model": "deepseek-flash", "reasoning_effort": "high", "generations": 2, "candidates_per_generation": 3, "start_gen": 1, "seeded_from": "generated_supervisors_coordination/window600_measured/current_supervisor.py"}
+{"started": "2026-10-05T20:15:26+00:00", "git_commit": "329cf2e", "model": "deepseek-flash", "reasoning_effort": "high", "generations": 2, "candidates_per_generation": 3, "start_gen": 3, "seeded_from": null}

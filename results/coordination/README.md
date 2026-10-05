@@ -31,13 +31,16 @@ Champion scores are re-scored on the current batteries (600 s window, 3 scenario
 | `window600_guardschedule` | 2026-10-05 | Guard loose in gens 1-2, tighter in 3-4 and from 5; failure traces of non-promoted candidates in the prompt | 4 x 3 | 1 | $0.42 | 231.5 / 247.5 / 1339.3 |
 | `window600_onechange` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion; one targeted change per candidate | 3 x 3 (gens 5-7) | 0 | $0.11 | 231.5 / 247.5 / 1339.3 (seed) |
 | `window600_measured` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion (`--from`); lessons only from promoted candidates, measured record of every tried change in the prompt | 3 x 3 | 0 | $0.21 | 231.5 / 247.5 / 1339.3 (seed) |
-| `window600_high` | 2026-10-05 | Seeded with `window600_measured`'s champion, inheriting its 9 measured attempts; reasoning effort **high** | 2 x 3 | 2 | $0.30 | **227.4 / 229.2 / 1181.4** |
+| `window600_high` | 2026-10-05 | Seeded with `window600_measured`'s champion, inheriting its 9 measured attempts; reasoning effort **high** (gens 1-2, then continued for gens 3-4) | 4 x 3 | 4 | $0.63 | **206.3 / 214.9** / 1199.2 |
 
 Baselines on the same batteries: fixed recipe 533.4 / 478.7 / 1583.0, MPC 203.7 / 193.8 / 1123.6,
 oracle MPC 192.9 / 191.1 / 1110.9.
 
 ## Notes
 
+- `window600_high` champion after each promotion (dev / held-out; beyond only computed at the end of each
+  invocation): gen 1 230.3 / 226.2, gen 2 227.4 / 229.2 (beyond 1181.4), gen 3 212.4 / 221.0, gen 4 206.3 /
+  214.9 (beyond 1199.2).
 - The window-50 runs' logged scores (in their `trials.jsonl` and `final_report.md`) are on the
   old battery (50 s window, one scenario per cell) and are not comparable with the 600 s runs;
   the table's re-scored values are.

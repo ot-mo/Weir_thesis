@@ -179,18 +179,18 @@ def supervise(telemetry_window, active_setpoints, objectives):
     elif h2_cur - h2_des > lim_step:
         h2_des = h2_cur - lim_step
 
-    # lag-compensated (PD) production-error trim on the tank-1 setpoint.  The
-    # split above is in phase with the disturbance, but the path from setpoint
-    # to production needs about 1.5-2 minutes (level loop plus tank3/tank4
-    # storage), so a purely proportional trim on the MEASURED production error
-    # corrects each swing only after its trough or peak.  Predict the error one
-    # plant lag ahead from its own slope over a 90 s span (noise free, and the
-    # slope of the relevant minutes-long swing dominates the faster
-    # own-transient), then use that predicted error with the same gain, the
-    # same clamps and the same tank-3 headroom guard as before.  The prediction
-    # may only reinforce the error already measured (it is forced to zero when
-    # it would change sign), so target changes and step disturbances can only
-    # be corrected faster, never in reverse.
+    # CHANGED: lag-compensated (PD) production-error trim on the tank-1
+    # setpoint.  The split above is in phase with the disturbance, but the
+    # path from setpoint to production needs about 1.5-2 minutes (level loop
+    # plus tank3/tank4 storage), so a purely proportional trim on the
+    # MEASURED production error corrects each swing only after its trough or
+    # peak.  Predict the error one plant lag ahead from its own slope over a
+    # 90 s span (noise free, and the slope of the relevant minutes-long swing
+    # dominates the faster own-transient), then use that predicted error with
+    # the same gain, the same clamps and the same tank-3 headroom guard as
+    # before.  The prediction may only reinforce the error already measured
+    # (it is forced to zero when it would change sign), so target changes and
+    # step disturbances can only be corrected faster, never in reverse.
     Qmeas = last["production"] * 0.001
     eq = Q - Qmeas
     j_eq = n - 1 - 90
@@ -238,24 +238,14 @@ def supervise(telemetry_window, active_setpoints, objectives):
                     dh = -0.02
                 h1_des = min(hi_lim, max(lo_lim, h1_des + dh))
 
-    # CHANGED: the own-transient hold is shortened from 45 s to 25 s.  With
-    # 45 s the supervisor's split and production trim were re-evaluated only
-    # about every 50 s (one 0.06 m step per hold period), so a several-minute
-    # load oscillation was tracked with a ~50 s staircase and the split arrived
-    # roughly a half cycle late, deepening the h2 dip below its band and the
-    # production trough; the measured effect of the 100 s variant was worse for
-    # every disturbance type.  A 25 s hold still skips the first, most
-    # corrupted samples of our own level/voltage transient (the mass-balance
-    # residual of our own move) while letting the split follow the swing and a
-    # multi-step move complete.
     since_sp = t_now - last_change
-    if since_sp < 25.0 and last_change > last_tg:
+    if since_sp < 45.0 and last_change > last_tg:
         return {
             "diagnosis": "holding during own setpoint transient before re-evaluating constraints",
             "adjusted_setpoints": {"h1": h1_cur, "h2": h2_cur},
         }
 
     return {
-        "diagnosis": "model split from upper-level load plus lag-compensated (predicted) production trim on h1, bounded by tank-3/pump-2 headroom; own-transient hold shortened to 25 s so the split tracks swings without a ~50 s staircase",
+        "diagnosis": "model split from upper-level load plus lag-compensated (predicted) production trim on h1, bounded by tank-3/pump-2 headroom",
         "adjusted_setpoints": {"h1": h1_des, "h2": h2_des},
     }
