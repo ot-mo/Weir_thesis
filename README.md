@@ -230,8 +230,12 @@ generations 1-2 and tightens in 3-4 and from 5 on, so an early candidate that is
 much better overall but worse on one scenario still gets promoted and its weak
 scenario then shows up in the next prompt's traces. The prompt also shows, for up
 to two non-promoted candidates of the previous generation, the decision trace of
-the scenario each lost most on. The beyond-range battery is never shown to
-the LLM and only appears in the report, next to the baselines on identical scenarios.
+the scenario each lost most on. Each candidate must make one targeted change
+to the champion (one mechanism, the rest of the code kept), and the share of the
+champion's lines it kept is logged: in the first guard-schedule run, before
+this rule, candidates kept 16-65% of the champion and added 107-272 lines. The
+beyond-range battery is never shown to the LLM and only appears in the report,
+next to the baselines on identical scenarios.
 
 | Battery (42 / 42 / 36 scenarios) | Fixed recipe | MPC (estimated) | MPC (oracle) |
 |---|---|---|---|

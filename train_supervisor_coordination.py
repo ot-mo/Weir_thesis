@@ -12,8 +12,9 @@ A copy of train_supervisor_four_tank.py (which stays as it is for the leak
 task) with the same loop - parallel candidates, security gate, elitist
 promotion with a per-disturbance-type regression guard that tightens over the
 generations, decision traces (the champion's worst scenarios and where
-non-promoted candidates failed), previous attempts, lessons learned, stop
-switch, token logging - pointed at
+non-promoted candidates failed), one targeted change per candidate (with the
+share of the champion's code it kept logged), previous attempts, lessons
+learned, stop switch, token logging - pointed at
 four_tank_coordination.py:
 - Interface: supervise(telemetry_window, active_setpoints, objectives) ->
   {"diagnosis": str, "adjusted_setpoints": {"h1": float, "h2": float}}.
@@ -26,6 +27,7 @@ four_tank_coordination.py:
 """
 
 import csv
+import difflib
 import hashlib
 import json
 import os
@@ -476,7 +478,7 @@ champion's by more than a cap. Both start loose and tighten over the generations
 
 TASK:
 1. Diagnose what causes the worst-scoring scenarios, using the traces and the plant description: how does each disturbance move the pump voltages and upper levels, and which objective is violated?
-2. Write an improved `supervise` that keeps production on target and the constraints satisfied, using the free degree of freedom, without moving the setpoints more than needed.
+2. Make ONE targeted change to the current supervisor that addresses what your diagnosis found, so that production stays on target and the constraints hold, using the free degree of freedom, without moving the setpoints more than needed. One change = one mechanism (for example how a disturbance is estimated, how oscillations are handled, how the setpoint pair is chosen, a filter or a threshold); it may span several lines. Keep the rest of the current code as it is - its structure, helper functions and constants - unless the change has to touch them. Do not rewrite the function from scratch: rewrites tend to fix one scenario and break others, as the previous attempts below show, and one change at a time shows which change caused a score difference.
 3. In "self_check", state in 2-4 sentences how your logic keeps production on target and the constraints satisfied when a disturbance pushes an upper level toward its limit or a pump toward saturation. Do not solve the mass balances by hand; if your logic needs steady-state relations, compute them in the code.
 4. Add at most {MAX_RELATIONS_PER_GENERATION} NEW generalizable cause-effect relations this result reveals, each ONE sentence of at most {MAX_RELATION_WORDS} words. Do not repeat a listed one.
 
@@ -489,7 +491,7 @@ OUTPUT FORMAT - strictly this JSON:
     "next_recommendation": "string"
   }},
   "self_check": "string, 2-4 sentences: how your logic handles an upper level near its limit or a saturating pump",
-  "proposed_change": "string, at most 2 sentences",
+  "proposed_change": "string, ONE sentence naming the single change you made",
   "code": "full source of the new supervise function as a string",
   "relations_learned": ["one sentence, at most {MAX_RELATION_WORDS} words", ...]
 }}
@@ -626,8 +628,19 @@ def save_candidate_only(candidate_code, gen_idx, candidate):
         f.write(candidate_code)
 
 
+def code_change(old, new):
+    """How much of the champion a candidate kept: share of the champion's lines
+    unchanged in the candidate, and lines added/removed. Logged to check that
+    candidates make one targeted change rather than a rewrite."""
+    old_lines = [l.rstrip() for l in old.strip().splitlines()]
+    new_lines = [l.rstrip() for l in new.strip().splitlines()]
+    kept = sum(b.size for b in difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False).get_matching_blocks())
+    return {"kept_fraction": round(kept / max(len(old_lines), 1), 3),
+            "lines_added": len(new_lines) - kept, "lines_removed": len(old_lines) - kept}
+
+
 def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, reason=None, validation_score=None,
-              self_check=None, candidate=None, reasoning_effort=None, usage=None, model=None):
+              self_check=None, candidate=None, reasoning_effort=None, usage=None, model=None, code_change=None):
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(TRIALS_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps({
@@ -635,7 +648,7 @@ def log_trial(trial_idx, decision, score, failure_analysis, proposed_change, rea
             "usage": usage,
             "decision": decision, "score": score, "validation_score": validation_score,
             "failure_analysis": failure_analysis, "self_check": self_check,
-            "proposed_change": proposed_change, "reason": reason,
+            "proposed_change": proposed_change, "reason": reason, "code_change": code_change,
         }) + "\n")
 
 
@@ -736,10 +749,12 @@ def generate_report():
 
     with open(SUMMARY_CSV_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["trial", "candidate", "reasoning_effort", "decision", "score", "validation_score", "reason"])
+        writer.writerow(["trial", "candidate", "reasoning_effort", "decision", "score", "validation_score", "reason",
+                         "kept_fraction"])
         for t in trials:
             writer.writerow([t.get("trial"), t.get("candidate"), t.get("reasoning_effort"), t.get("decision"),
-                             t.get("score"), t.get("validation_score"), t.get("reason")])
+                             t.get("score"), t.get("validation_score"), t.get("reason"),
+                             (t.get("code_change") or {}).get("kept_fraction")])
 
     decision_counts = {}
     for t in trials:
@@ -794,6 +809,12 @@ def generate_report():
             lines.append(f"| {model} | {effort_level} | {n} | {s['prompt'] / n:.0f} | {s['cache_hit'] / n:.0f} | "
                          f"{s['completion'] / n:.0f} | {s['reasoning'] / n:.0f} | "
                          f"{f'${cost:.2f}' if cost is not None else '-'} |")
+
+    measured = [t for t in trials if t.get("code_change")]
+    if measured:
+        kept = [t["code_change"]["kept_fraction"] for t in measured]
+        lines.append(f"- Share of the champion's lines kept by a candidate: median {np.median(kept):.0%} "
+                     f"(range {min(kept):.0%}-{max(kept):.0%}, {len(kept)} candidates)")
 
     lines += ["", "## Score trajectory (promoted candidates only)", "",
               "| Generation | Candidate | Dev score | Held-out score |", "|---|---|---|---|"]
@@ -909,6 +930,10 @@ def main():
               f"completion {tokens['completion']} (reasoning {tokens['reasoning']})"
               + (f", est. ${cost:.3f}" if cost is not None else ""))
 
+        for r in records:
+            if r.get("code"):
+                r["code_change"] = code_change(current_code, r["code"])
+
         winner = None
         for r in records:
             if r["decision"] != "SCORED":
@@ -929,8 +954,10 @@ def main():
                     r["decision"] = "ELIGIBLE"
                     if winner is None or r["score"] < winner["score"]:
                         winner = r
+            cc = r["code_change"]
             print(f"  c{r['candidate']}: score {r['score']:.3f} (champion {best_score:.3f}) -> {r['decision']}"
-                  + (f" ({r['reason']})" if r.get("reason") else ""))
+                  + (f" ({r['reason']})" if r.get("reason") else "")
+                  + f" [kept {cc['kept_fraction']:.0%} of the champion's lines, +{cc['lines_added']}/-{cc['lines_removed']}]")
 
         for r in records:
             if r is winner:
@@ -942,7 +969,7 @@ def main():
                 save_candidate_only(r["code"], gen_idx, r["candidate"])
             log_trial(gen_idx, r["decision"], r["score"], r.get("failure_analysis"), r.get("proposed_change"),
                       reason=r.get("reason"), self_check=r.get("self_check"), candidate=r["candidate"],
-                      reasoning_effort=effort, usage=r["usage"], model=model)
+                      reasoning_effort=effort, usage=r["usage"], model=model, code_change=r.get("code_change"))
 
         if winner is not None:
             promote(winner["code"], gen_idx, winner["candidate"])
@@ -952,7 +979,8 @@ def main():
             winner["decision"] = "PROMOTED"
             log_trial(gen_idx, "PROMOTED", winner["score"], winner["failure_analysis"], winner["proposed_change"],
                       validation_score=best_val_score, self_check=winner["self_check"], candidate=winner["candidate"],
-                      reasoning_effort=effort, usage=winner["usage"], model=model)
+                      reasoning_effort=effort, usage=winner["usage"], model=model,
+                      code_change=winner.get("code_change"))
         else:
             print(f"[NO PROMOTION] champion stays at {best_score:.3f}")
 
