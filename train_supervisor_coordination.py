@@ -122,6 +122,9 @@ REASONING_EFFORT_DEFAULT = "low"  # see train_supervisor_four_tank.py for the me
 # above the default instead, to let long replies finish while still bounding a
 # genuine runaway. DeepSeek allows up to 384k.
 MAX_OUTPUT_TOKENS = 131072
+# Higher efforts write longer replies: at "low" one reply already reached 101k
+# tokens (window600_fixedguard), so "high" and "max" get twice the room.
+MAX_OUTPUT_TOKENS_BY_EFFORT = {"high": 262144, "max": 262144}
 NON_THINKING_TEMPERATURE = 1.0
 STOP_FILE = "STOP_TRAINING"
 TRACE_SCENARIOS = 2
@@ -624,7 +627,8 @@ def _request_kwargs(model, reasoning_effort):
     if reasoning_effort == "none":
         return {"max_tokens": MAX_OUTPUT_TOKENS, "extra_body": {"thinking": {"type": "disabled"}},
                 "temperature": NON_THINKING_TEMPERATURE}
-    return {"max_tokens": MAX_OUTPUT_TOKENS, "reasoning_effort": reasoning_effort}
+    return {"max_tokens": MAX_OUTPUT_TOKENS_BY_EFFORT.get(reasoning_effort, MAX_OUTPUT_TOKENS),
+            "reasoning_effort": reasoning_effort}
 
 
 def _usage(response):
