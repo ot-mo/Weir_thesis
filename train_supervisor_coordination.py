@@ -789,7 +789,8 @@ def _git_commit():
     """Commit the run's code came from, marked if trainer code had uncommitted changes."""
     try:
         commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
-        dirty = subprocess.run(["git", "status", "--porcelain", "--", "*.py"], capture_output=True, text=True).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no", "--", "*.py"],
+                               capture_output=True, text=True).stdout.strip()
     except OSError:
         return None
     return (commit + ("+uncommitted" if dirty else "")) if commit else None
