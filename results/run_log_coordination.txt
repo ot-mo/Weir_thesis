@@ -1,0 +1,41 @@
+[BASELINE] current_supervisor.py avg score: 533.367 (held-out: 478.728)
+
+=== Generation 1/4 (gen_1): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_1: type mean +max(10, 25%), single scenario +max(300, 150%)
+[TOKENS] 3 requests: prompt 25278 (cache hit 5760), completion 160250 (reasoning 150458), est. $0.099
+  c1: score 231.503 (champion 533.367) -> ELIGIBLE
+  c2: score 243.263 (champion 533.367) -> REJECTED_REGRESSION (dev_split_sine_1 got much worse: 191.9 -> 666.3, allowed +300)
+  c3: score 361.064 (champion 533.367) -> REJECTED_REGRESSION ('nominal' disturbances got worse on average: 251.8 -> 423.4, allowed +63)
+[PROMOTED] gen_1 candidate 1 is the new current_supervisor.py
+[VALIDATION] held-out score: 247.461 (dev score: 231.503)
+[LEARNED] ['Extra draw from tank1 raises pump2 demand and tank3 level; shifting production from tank1 toward tank2 lowers tank3.', 'A fixed production target defines a one-dimensional setpoint curve; when an upper level nears its limit, bias along it instead of changing total flow.']
+
+=== Generation 2/4 (gen_2): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_2: type mean +max(10, 25%), single scenario +max(300, 150%)
+[TOKENS] 3 requests: prompt 60327 (cache hit 6912), completion 148030 (reasoning 136927), est. $0.097
+  c1: score 381.116 (champion 231.503) -> ROLLBACK
+  c2: score 295.182 (champion 231.503) -> ROLLBACK
+  c3: score 392.319 (champion 231.503) -> ROLLBACK
+[NO PROMOTION] champion stays at 231.503
+[LEARNED] ["Extra inflow into tank2 forces the h2 setpoint up and h1 down, because lowering tank1's share would drive pump2 harder and push h3 over its limit.", 'Feed offsets estimated from level slopes (mass balance) stay valid during setpoint transients, whereas steady-state residuals under-estimate them and cause setpoint overshoot.']
+
+=== Generation 3/4 (gen_3): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_3: type mean +max(10, 15%), single scenario +max(200, 100%)
+[TOKENS] 3 requests: prompt 60588 (cache hit 13056), completion 224135 (reasoning 212679), est. $0.142
+  c1: score 361.957 (champion 231.503) -> ROLLBACK
+  c2: score 234.894 (champion 231.503) -> ROLLBACK
+  c3: score 288.568 (champion 231.503) -> ROLLBACK
+[NO PROMOTION] champion stays at 231.503
+[LEARNED] ['A zero-mean oscillatory feed disturbance cancels over a long window, so setpoints should respond only to sustained offsets, never to the instantaneous residual.', 'Using the window minimum of the tank1 feed residual pre-biases the split toward tank2, preventing tank3 overflow from periodic or step draw-off.']
+
+=== Generation 4/4 (gen_4): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_4: type mean +max(10, 15%), single scenario +max(200, 100%)
+[TOKENS] 3 requests: prompt 61959 (cache hit 13056), completion 126025 (reasoning 114677), est. $0.083
+  c1: score 12946.225 (champion 231.503) -> ROLLBACK
+  c2: score 546.143 (champion 231.503) -> ROLLBACK
+  c3: score 237.647 (champion 231.503) -> ROLLBACK
+[NO PROMOTION] champion stays at 231.503
+[LEARNED] ["Effective pump gain is recovered exactly from an upper tank's mass balance, (dh/dt + outflow)/(split*v), which separates pump-gain loss from feed disturbance.", 'Because the production target fixes the sum of the two lower-tank outflows, jumping the setpoints instantly costs no extra travel and removes ramping error.']
+
+[DONE] Final best score: 231.503. current_supervisor.py reflects the best candidate found.
+[SUCCESS] Report written to results\final_report_coordination.md and results\summary_coordination.csv
