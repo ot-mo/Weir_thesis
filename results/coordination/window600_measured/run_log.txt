@@ -1,0 +1,31 @@
+
+##### 2026-10-05T14:25:19 run 'window600_measured' #####
+[BASELINE] current_supervisor.py avg score: 231.503 (held-out: 247.461)
+
+=== Generation 1/3 (gen_1): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_1: type mean +max(10, 25%), single scenario +max(300, 150%)
+[TOKENS] 3 requests: prompt 50412 (cache hit 6912), completion 69818 (reasoning 60826), est. $0.048
+  c1: score 343.559 (champion 231.503) -> ROLLBACK [kept 94% of the champion's lines, +39/-11]
+  c2: score 293.561 (champion 231.503) -> ROLLBACK [kept 97% of the champion's lines, +21/-5]
+  c3: score 338.236 (champion 231.503) -> ROLLBACK [kept 94% of the champion's lines, +39/-11]
+[NO PROMOTION] champion stays at 231.503
+
+=== Generation 2/3 (gen_2): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_2: type mean +max(10, 25%), single scenario +max(300, 150%)
+[LLM API ERROR - Attempt 1/3]: unparseable response (Unterminated string starting at: line 6 column 28 (char 922)); finish_reason=stop, content_chars=1210, reasoning_chars=43171, prompt_tokens=20777, completion_tokens=13710, reasoning_tokens=13349
+[TOKENS] 4 requests: prompt 83108 (cache hit 34048), completion 112906 (reasoning 102590), est. $0.075
+  c1: score 271.402 (champion 231.503) -> ROLLBACK [kept 96% of the champion's lines, +25/-7]
+  c2: score 244.844 (champion 231.503) -> ROLLBACK [kept 99% of the champion's lines, +60/-1]
+  c3: score 241.495 (champion 231.503) -> ROLLBACK [kept 98% of the champion's lines, +68/-3]
+[NO PROMOTION] champion stays at 231.503
+
+=== Generation 3/3 (gen_3): sampling 3 candidates from deepseek-flash at reasoning effort low ===
+[GUARD] gen_3: type mean +max(10, 15%), single scenario +max(200, 100%)
+[TOKENS] 3 requests: prompt 63048 (cache hit 13440), completion 125396 (reasoning 116448), est. $0.083
+  c1: score 281.751 (champion 231.503) -> ROLLBACK [kept 98% of the champion's lines, +24/-3]
+  c2: score 250.730 (champion 231.503) -> ROLLBACK [kept 99% of the champion's lines, +17/-1]
+  c3: score 260.247 (champion 231.503) -> ROLLBACK [kept 99% of the champion's lines, +2/-2]
+[NO PROMOTION] champion stays at 231.503
+
+[DONE] Final best score: 231.503. current_supervisor.py reflects the best candidate found.
+[SUCCESS] Report written to results\coordination\window600_measured\final_report.md and results\coordination\window600_measured\summary.csv

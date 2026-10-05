@@ -30,6 +30,7 @@ Champion scores are re-scored on the current batteries (600 s window, 3 scenario
 | `window600_fixedguard` | 2026-10-05 | 600 s window with setpoint/target history, 3 scenarios per cell, guard per disturbance type plus a per-scenario cap, 3 candidates | 3 x 3 | 0 | $0.32 | 533.4 / 478.7 / 1583.0 (seed) |
 | `window600_guardschedule` | 2026-10-05 | Guard loose in gens 1-2, tighter in 3-4 and from 5; failure traces of non-promoted candidates in the prompt | 4 x 3 | 1 | $0.42 | 231.5 / 247.5 / 1339.3 |
 | `window600_onechange` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion; one targeted change per candidate | 3 x 3 (gens 5-7) | 0 | $0.11 | 231.5 / 247.5 / 1339.3 (seed) |
+| `window600_measured` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion (`--from`); lessons only from promoted candidates, measured record of every tried change in the prompt | 3 x 3 | 0 | $0.21 | 231.5 / 247.5 / 1339.3 (seed) |
 
 Baselines on the same batteries: fixed recipe 533.4 / 478.7 / 1583.0, MPC 203.7 / 193.8 / 1123.6,
 oracle MPC 192.9 / 191.1 / 1110.9.
