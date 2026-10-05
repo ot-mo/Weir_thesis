@@ -222,7 +222,8 @@ python train_supervisor_coordination.py --report --run NAME                     
 
 Every run is named and has its own folders, `generated_supervisors_coordination/NAME/`
 and `results/coordination/NAME/`; a new name starts from the fixed recipe (or from
-another run's champion with `--from RUN`), an existing name continues.
+another run's champion with `--from RUN`, inheriting that run's measured record of the changes
+already tried on the champion), an existing name continues.
 [results/coordination/README.md](results/coordination/README.md) lists all runs with
 their setup, cost and champion scores.
 

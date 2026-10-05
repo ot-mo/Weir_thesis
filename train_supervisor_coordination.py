@@ -6,7 +6,8 @@ Run manually: python train_supervisor_coordination.py [num_generations] --run NA
   --run: required; every run has its own folders, generated_supervisors_coordination/NAME/ (candidates,
          champion) and results/coordination/NAME/ (trial log, evaluations, lessons, run log, report).
          An existing run continues where it stopped.
-  --from: seed a NEW run with RUN's champion instead of the fixed recipe (generation numbers restart at 1)
+  --from: seed a NEW run with RUN's champion instead of the fixed recipe (generation numbers restart at 1);
+         the new run also inherits RUN's measured record of the changes already tried on that champion
   --model: deepseek-flash (default), gpt-6-luna or gpt-6.1-sol (OPENAI_API_KEY in .env)
   --effort: reasoning effort, default low (DeepSeek: none|low|high|max; Luna: none|low|medium|high|xhigh|max;
             Sol: low|medium|high|xhigh|max)
@@ -97,7 +98,7 @@ BASELINES_CSV_PATH = os.path.join(BASE_RESULTS_DIR, "baselines.csv")
 # Per-run paths, set by _use_run().
 SUPERVISORS_DIR = CURRENT_SUPERVISOR_PATH = RESULTS_DIR = None
 EVALUATIONS_PATH = TRIALS_PATH = CONTEXT_REPORT_PATH = SUMMARY_CSV_PATH = FINAL_REPORT_PATH = None
-RUN_LOG_PATH = INVOCATIONS_PATH = None
+RUN_LOG_PATH = INVOCATIONS_PATH = INHERITED_TRIALS_PATH = None
 MAX_CONTEXT_RELATIONS = 12
 # Lessons (relations_learned) are kept only from promoted candidates. The model
 # writes them in the same reply as its code, before it is scored; until
@@ -388,13 +389,16 @@ def _failure_traces_block(attempts):
 
 
 def _history_block():
-    """One measured line per earlier candidate of this run, from the trial log:
-    its change, its average against the champion it was compared with, and the
-    scenario it gained and lost most on."""
+    """One measured line per earlier candidate of this run, from the trial log
+    (preceded by what a run seeded with --from inherited): its change, its
+    average against the champion it was compared with, and the scenario it
+    gained and lost most on."""
     lines = []
-    for t in _read_trials()[-MAX_HISTORY_ENTRIES:]:
+    inherited = _read_jsonl(INHERITED_TRIALS_PATH) if INHERITED_TRIALS_PATH else []
+    for t in (inherited + _read_trials())[-MAX_HISTORY_ENTRIES:]:
         change = str(t.get("proposed_change") or "")[:300]
-        line = f"- gen {t['trial']} c{t.get('candidate')} {t['decision']}: {change}"
+        origin = f"run {t['run']} " if t.get("run") else ""
+        line = f"- {origin}gen {t['trial']} c{t.get('candidate')} {t['decision']}: {change}"
         if t.get("score") is None:
             line += f" | {str(t.get('reason') or '')[:120]}"
         else:
@@ -407,8 +411,8 @@ def _history_block():
         lines.append(line)
     if not lines:
         return ""
-    return ("\nCHANGES TRIED SO FAR IN THIS RUN (measured by the trainer, oldest first; avg = battery score of the "
-            "champion it was compared with -> the candidate's). HARD CONSTRAINT: do not resubmit a change listed as not "
+    return ("\nCHANGES TRIED SO FAR (measured by the trainer, oldest first; lines marked with a run name were tried on "
+            "this champion in an earlier run; avg = battery score of the champion it was compared with -> the candidate's). HARD CONSTRAINT: do not resubmit a change listed as not "
             "PROMOTED; build on one only if your change removes the loss it caused, and say how in proposed_change.\n"
             + "\n".join(lines) + "\n")
 
@@ -744,7 +748,7 @@ def _use_run(run_name, seed_from=None):
     fixed recipe (gen_0), or with another run's champion if seed_from is given.
     Returns the seed's path for a new run, None for an existing one."""
     global SUPERVISORS_DIR, CURRENT_SUPERVISOR_PATH, RESULTS_DIR, EVALUATIONS_PATH, TRIALS_PATH
-    global CONTEXT_REPORT_PATH, SUMMARY_CSV_PATH, FINAL_REPORT_PATH, RUN_LOG_PATH, INVOCATIONS_PATH
+    global CONTEXT_REPORT_PATH, SUMMARY_CSV_PATH, FINAL_REPORT_PATH, RUN_LOG_PATH, INVOCATIONS_PATH, INHERITED_TRIALS_PATH
     SUPERVISORS_DIR = os.path.join(BASE_SUPERVISORS_DIR, run_name)
     CURRENT_SUPERVISOR_PATH = os.path.join(SUPERVISORS_DIR, "current_supervisor.py")
     RESULTS_DIR = os.path.join(BASE_RESULTS_DIR, run_name)
@@ -755,6 +759,7 @@ def _use_run(run_name, seed_from=None):
     FINAL_REPORT_PATH = os.path.join(RESULTS_DIR, "final_report.md")
     RUN_LOG_PATH = os.path.join(RESULTS_DIR, "run_log.txt")
     INVOCATIONS_PATH = os.path.join(RESULTS_DIR, "invocations.jsonl")
+    INHERITED_TRIALS_PATH = os.path.join(RESULTS_DIR, "inherited_trials.jsonl")
     os.makedirs(SUPERVISORS_DIR, exist_ok=True)
     os.makedirs(RESULTS_DIR, exist_ok=True)
     if os.path.exists(CURRENT_SUPERVISOR_PATH):
@@ -768,7 +773,33 @@ def _use_run(run_name, seed_from=None):
         sys.exit(1)
     with open(seed_path, "r", encoding="utf-8") as src, open(CURRENT_SUPERVISOR_PATH, "w", encoding="utf-8") as dst:
         dst.write(src.read())
+    if seed_from:
+        with open(INHERITED_TRIALS_PATH, "w", encoding="utf-8") as f:
+            for t in _champion_history(seed_from):
+                f.write(json.dumps(t) + "\n")
     return seed_path
+
+
+def _read_jsonl(path):
+    if not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def _champion_history(run):
+    """Trials of `run` measured against its current champion: everything after
+    its last promotion (plus that promotion), or, if it never promoted, all its
+    trials plus what it inherited itself. Each is labelled with its run.
+    window600_measured, for example, started without this and repeated in its
+    first generation the change that had failed six times in window600_onechange."""
+    folder = os.path.join(BASE_RESULTS_DIR, run)
+    own = [dict(t, run=t.get("run", run)) for t in _read_jsonl(os.path.join(folder, "trials.jsonl"))]
+    promoted = [t["trial"] for t in own if t["decision"] == "PROMOTED"]
+    if promoted:
+        last = max(promoted)
+        return [t for t in own if t["trial"] > last or (t["trial"] == last and t["decision"] == "PROMOTED")]
+    return _read_jsonl(os.path.join(folder, "inherited_trials.jsonl")) + own
 
 
 class _Tee:
