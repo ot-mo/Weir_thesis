@@ -1,7 +1,6 @@
 # Reading List
 
-Sources for the thesis, grouped by topic. Less-cited, older or very recent sources that are
-not standard references in this area are marked *deep cut*.
+Sources for the thesis, grouped by topic.
 
 ## Starting point
 
@@ -30,7 +29,7 @@ discovery." arXiv:2506.13131, 2025. https://arxiv.org/abs/2506.13131
 Evolutionary coding agent that combines a fast model for breadth with a stronger model for depth,
 and proposes changes as diffs against a parent program rather than whole new programs.
 
-**Evolution through Large Models (ELM)** *(deep cut)*: Lehman, J., Gordon, J., Jain, S., Ndousse,
+**Evolution through Large Models (ELM)**: Lehman, J., Gordon, J., Jain, S., Ndousse,
 K., Yeh, C., Stanley, K.O. arXiv:2206.08896, 2022. https://arxiv.org/abs/2206.08896
 An early statement of the LLM as a mutation operator in genetic programming. A code model
 mutates programs inside MAP-Elites to generate walking robots in the Sodarace domain.
@@ -51,26 +50,26 @@ Evolution." NeurIPS 2024, arXiv:2402.01145. https://arxiv.org/abs/2402.01145
 Combines evolutionary search over heuristics with LLM-written reflections that act as "verbal
 gradients", across several combinatorial optimization problems.
 
-**ShinkaEvolve** *(deep cut)*: Lange, R.T., Imajuku, Y., Cetin, E. "ShinkaEvolve: Towards
+**ShinkaEvolve**: Lange, R.T., Imajuku, Y., Cetin, E. "ShinkaEvolve: Towards
 Open-Ended and Sample-Efficient Program Evolution." arXiv:2509.19349, 2025.
 https://arxiv.org/abs/2509.19349 (code: https://github.com/SakanaAI/ShinkaEvolve)
 An open-source framework aimed at sample efficiency. It uses adaptive parent sampling, rejects
 code proposals that are too similar to earlier ones, and chooses between several LLMs with a
 bandit. Reports a new circle-packing solution from about 150 samples.
 
-**Darwin Gödel Machine** *(deep cut)*: Zhang, J., Hu, S., Lu, C., Lange, R., Clune, J. "Darwin
+**Darwin Gödel Machine**: Zhang, J., Hu, S., Lu, C., Lange, R., Clune, J. "Darwin
 Gödel Machine: Open-Ended Evolution of Self-Improving Agents." arXiv:2505.22954, 2025.
 https://arxiv.org/abs/2505.22954
 A coding agent that edits its own code and keeps an archive of all variants instead of a single
 champion. This is the open-ended alternative to an elitist hill-climb.
 
-**Simple Baselines are Competitive with Code Evolution** *(deep cut)*: Gideoni, Y., Risi, S.,
+**Simple Baselines are Competitive with Code Evolution**: Gideoni, Y., Risi, S.,
 Gal, Y. ICLR 2026, arXiv:2602.16805. https://arxiv.org/abs/2602.16805
 Finds that simple baselines match or beat sophisticated code-evolution pipelines on mathematical
 bounds, agent scaffolds and ML competitions. The search space and the domain knowledge in the
 prompt set the performance ceiling more than the evolution machinery does.
 
-**What Do Evolutionary Coding Agents Evolve?** *(deep cut)*: Pelleriti, N., Nelaturu, S.H., Zhou,
+**What Do Evolutionary Coding Agents Evolve?**: Pelleriti, N., Nelaturu, S.H., Zhou,
 Z., Li, Z., Zimmer, M., Han, B., Pokutta, S. arXiv:2605.20086, 2026.
 https://arxiv.org/abs/2605.20086
 Replays evolutionary coding traces from four frameworks and classifies the edits behind score
@@ -89,7 +88,7 @@ Control." ICRA 2023, arXiv:2209.07753. https://arxiv.org/abs/2209.07753
 An LLM writes robot policy code that calls perception and control APIs, including feedback
 loops; the generated program is itself the policy.
 
-**LLM4PLC** *(deep cut)*: Fakih, M., Dharmaji, R., Moghaddas, Y., Quiros, G., Ogundare, O., Al
+**LLM4PLC**: Fakih, M., Dharmaji, R., Moghaddas, Y., Quiros, G., Ogundare, O., Al
 Faruque, M.A. "LLM4PLC: Harnessing Large Language Models for Verifiable Programming of PLCs in
 Industrial Control Systems." ICSE-SEIP 2024, arXiv:2401.05443. https://arxiv.org/abs/2401.05443
 A pipeline that passes LLM-generated PLC programs through grammar checkers, compilers and an SMV
@@ -103,13 +102,13 @@ Agents with Verbal Reinforcement Learning." NeurIPS 2023, arXiv:2303.11366.
 https://arxiv.org/abs/2303.11366
 Agents write verbal reflections on failed attempts into a memory that conditions later attempts.
 
-**Trace** *(deep cut)*: Cheng, C.-A., Nie, A., Swaminathan, A. "Trace is the Next AutoDiff:
+**Trace**: Cheng, C.-A., Nie, A., Swaminathan, A. "Trace is the Next AutoDiff:
 Generative Optimization with Rich Feedback, Execution Traces, and LLMs." NeurIPS 2024,
 arXiv:2406.16218. https://arxiv.org/abs/2406.16218
 Treats a workflow's execution trace as the analogue of a back-propagated gradient. An LLM
 optimizer updates code and prompts from the trace plus feedback.
 
-**Large Language Models Cannot Self-Correct Reasoning Yet** *(deep cut)*: Huang, J. et al. ICLR
+**Large Language Models Cannot Self-Correct Reasoning Yet**: Huang, J. et al. ICLR
 2024, arXiv:2310.01798. https://arxiv.org/abs/2310.01798
 Without external feedback, LLMs do not reliably correct their own reasoning and sometimes get
 worse. Earlier reported gains depended on oracle labels. Relevant to keeping only measured
@@ -117,14 +116,14 @@ results, not the model's own unverified lessons.
 
 ## Interpretable and programmatic policies
 
-**Programmatically Interpretable Reinforcement Learning (PIRL)** *(deep cut)*: Verma, A., Murali,
+**Programmatically Interpretable Reinforcement Learning (PIRL)**: Verma, A., Murali,
 V., Singh, R., Kohli, P., Chaudhuri, S. ICML 2018, arXiv:1804.02477.
 https://arxiv.org/abs/1804.02477
 Searches for policies as programs in a small domain-specific language, guided by a neural
 policy, on the TORCS racing simulator. The resulting programs are readable controllers that can
 be inspected and verified.
 
-**VIPER** *(deep cut)*: Bastani, O., Pu, Y., Solar-Lezama, A. "Verifiable Reinforcement Learning
+**VIPER**: Bastani, O., Pu, Y., Solar-Lezama, A. "Verifiable Reinforcement Learning
 via Policy Extraction." NeurIPS 2018, arXiv:1805.08328. https://arxiv.org/abs/1805.08328
 Extracts decision-tree policies from neural policies so that properties such as correctness,
 robustness and stability can be verified.
@@ -148,18 +147,18 @@ Schulman, J., Mané, D. arXiv:1606.06565, 2016. https://arxiv.org/abs/1606.06565
 Presents reward hacking as one of five concrete AI-safety problems, a predictable property of any
 optimization against a proxy objective.
 
-**The Surprising Creativity of Digital Evolution** *(deep cut)*: Lehman, J. et al. *Artificial
+**The Surprising Creativity of Digital Evolution**: Lehman, J. et al. *Artificial
 Life* 26(2), 2020, arXiv:1803.03453. https://arxiv.org/abs/1803.03453
 First-hand anecdotes of evolutionary algorithms exploiting simulator bugs and badly specified
 fitness functions. The same failure class, in evolutionary search specifically.
 
-**The reusable holdout** *(deep cut)*: Dwork, C., Feldman, V., Hardt, M., Pitassi, T., Reingold,
+**The reusable holdout**: Dwork, C., Feldman, V., Hardt, M., Pitassi, T., Reingold,
 O., Roth, A. "The reusable holdout: Preserving validity in adaptive data analysis." *Science*
 349(6248), 636–638, 2015. https://www.science.org/doi/10.1126/science.aaa9375
 Shows that repeatedly consulting a holdout set while making choices leaks information and
 invalidates it as an unbiased test. Relevant to showing an optimizer the dev-vs-held-out gap.
 
-**Do ImageNet Classifiers Generalize to ImageNet?** *(deep cut)*: Recht, B., Roelofs, R.,
+**Do ImageNet Classifiers Generalize to ImageNet?**: Recht, B., Roelofs, R.,
 Schmidt, L., Shankar, V. ICML 2019, arXiv:1902.10811. https://arxiv.org/abs/1902.10811
 Builds new test sets with the original collection protocol. Accuracy drops noticeably, while
 model rankings are largely preserved. An empirical look at the gap between the benchmark used
@@ -167,7 +166,7 @@ for selection and fresh samples from the same distribution.
 
 ## Supervisory control, setpoint optimization and MPC practice
 
-**Self-optimizing control** *(deep cut)*: Skogestad, S. "Plantwide control: the search for the
+**Self-optimizing control**: Skogestad, S. "Plantwide control: the search for the
 self-optimizing control structure." *Journal of Process Control* 10, 487–507, 2000.
 https://skoge.folk.ntnu.no/publications/2000/self1/self1.pdf
 How to choose the controlled variables whose constant setpoints keep operation near-optimal under
@@ -184,20 +183,20 @@ setpoint-only supervisor.
 control technology." *Control Engineering Practice* 11(7), 733–764, 2003.
 The standard overview of how MPC is configured and used in industry.
 
-**Offset-free MPC** *(deep cut)*: Muske, K.R., Badgwell, T.A. "Disturbance modeling for
+**Offset-free MPC**: Muske, K.R., Badgwell, T.A. "Disturbance modeling for
 offset-free linear model predictive control." *Journal of Process Control* 12, 617–632, 2002.
 Augments the plant model with disturbance states estimated by an observer, so that MPC removes
 steady-state offset. The theory behind the bias-update disturbance estimate in the MPC baseline.
 
 ## Oscillation detection and loop monitoring
 
-**A control-loop performance monitor** *(deep cut)*: Hägglund, T. *Control Engineering Practice*
+**A control-loop performance monitor**: Hägglund, T. *Control Engineering Practice*
 3(11), 1543–1551, 1995. https://doi.org/10.1016/0967-0661(95)00164-P
 Detects oscillating loops automatically by integrating the absolute control error between zero
 crossings and counting large excursions, using only the normal controller parameters. A
 reference point for supervisors that must tell sustained oscillations from steps.
 
-**Detection and diagnosis of oscillation in control loops** *(deep cut)*: Thornhill, N.F.,
+**Detection and diagnosis of oscillation in control loops**: Thornhill, N.F.,
 Hägglund, T. *Control Engineering Practice* 5(10), 1343–1354, 1997.
 Operational signatures that indicate the cause of a loop oscillation and which test to run to
 confirm it.
@@ -235,7 +234,7 @@ A review noting that PID still dominates mineral processing despite decades of a
 research. Calls for a hierarchical view that integrates sensors, observers, controllers and
 optimizers.
 
-**Run-of-mine grinding circuit model** *(deep cut)*: le Roux, J.D., Craig, I.K., Hulbert, D.G.,
+**Run-of-mine grinding circuit model**: le Roux, J.D., Craig, I.K., Hulbert, D.G.,
 Hinde, A.L. "Analysis and validation of a run-of-mine ore grinding mill circuit model for process
 control." *Minerals Engineering* 43–44, 121–134, 2013.
 https://doi.org/10.1016/j.mineng.2012.10.009
@@ -270,7 +269,7 @@ published results. pyTEP requires a MATLAB/Simulink installation.
 
 ## Sandboxing generated code
 
-**Eval really is dangerous** *(deep cut)*: Batchelder, N. Blog post, 2012.
+**Eval really is dangerous**: Batchelder, N. Blog post, 2012.
 https://nedbatchelder.com/blog/201206/eval_really_is_dangerous
 Shows how Python code run with an emptied namespace can still reach `__import__` and other
 internals through object attributes. The reason a restricted `exec` needs AST checks on dunder
