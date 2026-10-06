@@ -1,153 +1,277 @@
 # Reading List
 
-Background reading for this project, organized by which part of the work each
-piece speaks to. You've already read "Learning Beyond Gradients," which was
-the main inspiration — everything below either sits in the same lineage
-(LLM-guided program search) or explains a failure mode we actually hit while
-building this (reward hacking/specification gaming), or is the literature
-around the baseline we're ultimately comparing against (TD-MPC).
+Sources for the thesis, grouped by topic. Less-cited, older or very recent sources that are
+not standard references in this area are marked *deep cut*.
 
-## LLM-guided program search — the core paradigm
+## Starting point
 
-This project's Layer 3 (an LLM proposing code, evaluated on a fixed battery,
-kept only on improvement) is a small instance of a pattern these papers
-established and scaled up.
+**Learning Beyond Gradients**: Weng, J. Blog post, 2026.
+https://trinkle23897.github.io/learning-beyond-gradients/
+Describes improving a policy with a coding agent that inspects execution traces, replays and
+failure modes and rewrites code, instead of through gradient updates. Recommends simplifying the
+code after every new best score and checking that the score does not regress.
 
-**FunSearch** — Romera-Paredes, B. et al. "Mathematical discoveries from
-program search with large language models." *Nature*, 2023.
-https://www.nature.com/articles/s41586-023-06924-6
-(blog: https://deepmind.google/blog/funsearch-making-new-discoveries-in-mathematical-sciences-using-large-language-models/)
+**PromptPO**: Hatgis-Kessell, S., Brunskill, E. "When are LLMs sufficient policy optimizers for
+sequential RL tasks?" arXiv:2605.30719, 2026. https://arxiv.org/abs/2605.30719
+Prompts an LLM with Python descriptions of the state space, action space and reward function and
+refines executable policies from rollout feedback. The resulting policies range from tuned
+proportional controllers to rule-based plans.
 
-The closest academic relative of `train_supervisor.py`'s loop: pair an LLM
-with an automated evaluator in an evolutionary procedure — generate candidate
-programs, score them, use the best to seed new candidates — applied to open
-problems in combinatorics and bin-packing. Read this first: it's the cleanest
-statement of "LLM as mutation operator over a program population, evaluator
-as the only judge," which is exactly our `check_source` → `score_supervisor`
-→ elitist-keep loop, minus the multi-tank control domain.
+## LLM-guided program search and evolution
 
-**AlphaEvolve** — Novikov, A. et al. "AlphaEvolve: A coding agent for
-scientific and algorithmic discovery." arXiv:2506.13131, 2025.
-https://arxiv.org/abs/2506.13131
-(blog: https://deepmind.google/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/)
+**FunSearch**: Romera-Paredes, B. et al. "Mathematical discoveries from program search with large
+language models." *Nature* 625, 468–475, 2024. https://www.nature.com/articles/s41586-023-06924-6
+Pairs an LLM with an automated evaluator in an evolutionary loop over programs, with the
+evaluator as the only judge. Found new cap set constructions and better online bin-packing
+heuristics.
 
-FunSearch scaled into a general-purpose evolutionary coding agent, notably
-using a *cheaper/faster* model to maximize idea breadth and a *stronger*
-model for depth on the same search — directly relevant to our own
-flash-vs-v4-pro back-and-forth this project went through, and to the
-(corrected) conclusion that search *infrastructure* — memory across trials,
-generalization feedback — mattered more than raw model tier for us.
+**AlphaEvolve**: Novikov, A. et al. "AlphaEvolve: A coding agent for scientific and algorithmic
+discovery." arXiv:2506.13131, 2025. https://arxiv.org/abs/2506.13131
+Evolutionary coding agent that combines a fast model for breadth with a stronger model for depth,
+and proposes changes as diffs against a parent program rather than whole new programs.
 
-**Eureka** — Ma, Y.J. et al. "Eureka: Human-Level Reward Design via Coding
-Large Language Models." ICLR 2024, arXiv:2310.12931.
-https://arxiv.org/abs/2310.12931
+**Evolution through Large Models (ELM)** *(deep cut)*: Lehman, J., Gordon, J., Jain, S., Ndousse,
+K., Yeh, C., Stanley, K.O. arXiv:2206.08896, 2022. https://arxiv.org/abs/2206.08896
+An early statement of the LLM as a mutation operator in genetic programming. A code model
+mutates programs inside MAP-Elites to generate walking robots in the Sodarace domain.
 
-An LLM writes *reward functions* (not policies) for RL tasks, evaluates them
-by actually running RL with each candidate, and iterates using a "reward
-reflection" step where it reads back numeric feedback from the last attempt.
-That reflection step is essentially what our `relations_learned` /
-context-report mechanism does — accumulating durable, reusable diagnostic
-insight across trials instead of reasoning from scratch each time. Worth
-reading specifically for how they structure that feedback loop.
+**OPRO**: Yang, C. et al. "Large Language Models as Optimizers." ICLR 2024, arXiv:2309.03409.
+https://arxiv.org/abs/2309.03409
+The LLM is shown earlier solutions with their scores in a meta-prompt and asked for a better one.
+Applied to linear regression, the travelling salesman problem and prompt optimization.
 
-## Reward hacking / specification gaming — why the anti-gaming guards exist
+**Evolution of Heuristics (EoH)**: Liu, F. et al. "Evolution of Heuristics: Towards Efficient
+Automatic Algorithm Design Using Large Language Model." ICML 2024, arXiv:2401.02051.
+https://arxiv.org/abs/2401.02051
+Evolves a natural-language description of each heuristic together with its code, on online bin
+packing, travelling salesman and flow-shop scheduling.
 
-We independently rediscovered this failure mode this session (a candidate
-"solving" the two-tank problem by flagging anomalies constantly, winning on
-an *averaged* score while badly regressing a fault-free scenario) before
-fixing it with per-scenario regression guards and asymmetric penalties. These
-are the standard references for that failure class.
+**ReEvo**: Ye, H. et al. "ReEvo: Large Language Models as Hyper-Heuristics with Reflective
+Evolution." NeurIPS 2024, arXiv:2402.01145. https://arxiv.org/abs/2402.01145
+Combines evolutionary search over heuristics with LLM-written reflections that act as "verbal
+gradients", across several combinatorial optimization problems.
 
-**Specification gaming: the flip side of AI ingenuity** — Krakovna, V. et al.
-DeepMind blog + examples catalogue, 2020.
+**ShinkaEvolve** *(deep cut)*: Lange, R.T., Imajuku, Y., Cetin, E. "ShinkaEvolve: Towards
+Open-Ended and Sample-Efficient Program Evolution." arXiv:2509.19349, 2025.
+https://arxiv.org/abs/2509.19349 (code: https://github.com/SakanaAI/ShinkaEvolve)
+An open-source framework aimed at sample efficiency. It uses adaptive parent sampling, rejects
+code proposals that are too similar to earlier ones, and chooses between several LLMs with a
+bandit. Reports a new circle-packing solution from about 150 samples.
+
+**Darwin Gödel Machine** *(deep cut)*: Zhang, J., Hu, S., Lu, C., Lange, R., Clune, J. "Darwin
+Gödel Machine: Open-Ended Evolution of Self-Improving Agents." arXiv:2505.22954, 2025.
+https://arxiv.org/abs/2505.22954
+A coding agent that edits its own code and keeps an archive of all variants instead of a single
+champion. This is the open-ended alternative to an elitist hill-climb.
+
+**Simple Baselines are Competitive with Code Evolution** *(deep cut)*: Gideoni, Y., Risi, S.,
+Gal, Y. ICLR 2026, arXiv:2602.16805. https://arxiv.org/abs/2602.16805
+Finds that simple baselines match or beat sophisticated code-evolution pipelines on mathematical
+bounds, agent scaffolds and ML competitions. The search space and the domain knowledge in the
+prompt set the performance ceiling more than the evolution machinery does.
+
+**What Do Evolutionary Coding Agents Evolve?** *(deep cut)*: Pelleriti, N., Nelaturu, S.H., Zhou,
+Z., Li, Z., Zimmer, M., Han, B., Pokutta, S. arXiv:2605.20086, 2026.
+https://arxiv.org/abs/2605.20086
+Replays evolutionary coding traces from four frameworks and classifies the edits behind score
+gains: bug fixes, re-tuned constants, recombination, re-introduced code and new structure. Only
+some benchmark gains correspond to new algorithmic structure.
+
+## LLMs writing rewards, policies and controller code
+
+**Eureka**: Ma, Y.J. et al. "Eureka: Human-Level Reward Design via Coding Large Language Models."
+ICLR 2024, arXiv:2310.12931. https://arxiv.org/abs/2310.12931
+An LLM writes reward functions for reinforcement learning, each evaluated by training a policy
+with it. Numeric training statistics are fed back in a "reward reflection" step.
+
+**Code as Policies**: Liang, J. et al. "Code as Policies: Language Model Programs for Embodied
+Control." ICRA 2023, arXiv:2209.07753. https://arxiv.org/abs/2209.07753
+An LLM writes robot policy code that calls perception and control APIs, including feedback
+loops; the generated program is itself the policy.
+
+**LLM4PLC** *(deep cut)*: Fakih, M., Dharmaji, R., Moghaddas, Y., Quiros, G., Ogundare, O., Al
+Faruque, M.A. "LLM4PLC: Harnessing Large Language Models for Verifiable Programming of PLCs in
+Industrial Control Systems." ICSE-SEIP 2024, arXiv:2401.05443. https://arxiv.org/abs/2401.05443
+A pipeline that passes LLM-generated PLC programs through grammar checkers, compilers and an SMV
+model checker, with feedback, before use. An industrial counterpart to gating generated code with
+security checks.
+
+## Feedback, memory and self-correction
+
+**Reflexion**: Shinn, N., Cassano, F., Gopinath, A., Narasimhan, K., Yao, S. "Reflexion: Language
+Agents with Verbal Reinforcement Learning." NeurIPS 2023, arXiv:2303.11366.
+https://arxiv.org/abs/2303.11366
+Agents write verbal reflections on failed attempts into a memory that conditions later attempts.
+
+**Trace** *(deep cut)*: Cheng, C.-A., Nie, A., Swaminathan, A. "Trace is the Next AutoDiff:
+Generative Optimization with Rich Feedback, Execution Traces, and LLMs." NeurIPS 2024,
+arXiv:2406.16218. https://arxiv.org/abs/2406.16218
+Treats a workflow's execution trace as the analogue of a back-propagated gradient. An LLM
+optimizer updates code and prompts from the trace plus feedback.
+
+**Large Language Models Cannot Self-Correct Reasoning Yet** *(deep cut)*: Huang, J. et al. ICLR
+2024, arXiv:2310.01798. https://arxiv.org/abs/2310.01798
+Without external feedback, LLMs do not reliably correct their own reasoning and sometimes get
+worse. Earlier reported gains depended on oracle labels. Relevant to keeping only measured
+results, not the model's own unverified lessons.
+
+## Interpretable and programmatic policies
+
+**Programmatically Interpretable Reinforcement Learning (PIRL)** *(deep cut)*: Verma, A., Murali,
+V., Singh, R., Kohli, P., Chaudhuri, S. ICML 2018, arXiv:1804.02477.
+https://arxiv.org/abs/1804.02477
+Searches for policies as programs in a small domain-specific language, guided by a neural
+policy, on the TORCS racing simulator. The resulting programs are readable controllers that can
+be inspected and verified.
+
+**VIPER** *(deep cut)*: Bastani, O., Pu, Y., Solar-Lezama, A. "Verifiable Reinforcement Learning
+via Policy Extraction." NeurIPS 2018, arXiv:1805.08328. https://arxiv.org/abs/1805.08328
+Extracts decision-tree policies from neural policies so that properties such as correctness,
+robustness and stability can be verified.
+
+**Stop explaining black box models**: Rudin, C. "Stop explaining black box machine learning
+models for high stakes decisions and use interpretable models instead." *Nature Machine
+Intelligence* 1, 206–215, 2019. https://www.nature.com/articles/s42256-019-0048-x
+Argues that in high-stakes settings, interpretable models should be preferred to post-hoc
+explanations of black boxes. Frames the readable-code-versus-neural-policy contrast.
+
+## Specification gaming and overfitting to the evaluator
+
+**Specification gaming: the flip side of AI ingenuity**: Krakovna, V. et al. DeepMind blog and
+example catalogue, 2020.
 https://deepmind.google/blog/specification-gaming-the-flip-side-of-ai-ingenuity/
+A catalogue of agents that satisfy the literal objective rather than the intended one, such as
+the CoastRunners boat circling to collect the same reward targets instead of finishing the race.
 
-The canonical catalogue of "agent satisfies the literal objective, not the
-intended one." The Coast Runners boat-racing example (an agent given reward
-for hitting checkpoints learns to spin in circles hitting the same checkpoint
-forever, forgoing the race entirely) is structurally identical to what we
-found in the two-tank trainer, just in a game instead of a control loop.
+**Concrete Problems in AI Safety**: Amodei, D., Olah, C., Steinhardt, J., Christiano, P.,
+Schulman, J., Mané, D. arXiv:1606.06565, 2016. https://arxiv.org/abs/1606.06565
+Presents reward hacking as one of five concrete AI-safety problems, a predictable property of any
+optimization against a proxy objective.
 
-**Concrete Problems in AI Safety** — Amodei, D., Olah, C., Steinhardt, J.,
-Christiano, P., Schulman, J., Mané, D. arXiv:1606.06565, 2016.
-https://arxiv.org/pdf/1606.06565
+**The Surprising Creativity of Digital Evolution** *(deep cut)*: Lehman, J. et al. *Artificial
+Life* 26(2), 2020, arXiv:1803.03453. https://arxiv.org/abs/1803.03453
+First-hand anecdotes of evolutionary algorithms exploiting simulator bugs and badly specified
+fitness functions. The same failure class, in evolutionary search specifically.
 
-Older and more foundational: "avoiding reward hacking" as one of five
-concrete, near-term AI safety problems, argued from first principles rather
-than by example. Good for framing *why* this is a predictable, general
-failure mode of any optimization process (LLM-guided search included) rather
-than a one-off bug in our scoring function.
+**The reusable holdout** *(deep cut)*: Dwork, C., Feldman, V., Hardt, M., Pitassi, T., Reingold,
+O., Roth, A. "The reusable holdout: Preserving validity in adaptive data analysis." *Science*
+349(6248), 636–638, 2015. https://www.science.org/doi/10.1126/science.aaa9375
+Shows that repeatedly consulting a holdout set while making choices leaks information and
+invalidates it as an unbiased test. Relevant to showing an optimizer the dev-vs-held-out gap.
 
-## The baseline we're ultimately compared against
+**Do ImageNet Classifiers Generalize to ImageNet?** *(deep cut)*: Recht, B., Roelofs, R.,
+Schmidt, L., Shankar, V. ICML 2019, arXiv:1902.10811. https://arxiv.org/abs/1902.10811
+Builds new test sets with the original collection protocol. Accuracy drops noticeably, while
+model rankings are largely preserved. An empirical look at the gap between the benchmark used
+for selection and fresh samples from the same distribution.
 
-**TD-MPC** — Hansen, N., Wang, X., Su, H. "Temporal Difference Learning for
-Model Predictive Control." ICML 2022.
-https://proceedings.mlr.press/v162/hansen22a/hansen22a.pdf
+## Supervisory control, setpoint optimization and MPC practice
 
-**TD-MPC2** — Hansen, N., Su, H., Wang, X. "TD-MPC2: Scalable, Robust World
-Models for Continuous Control." ICLR 2024, arXiv:2310.16828.
-https://arxiv.org/abs/2310.16828
+**Self-optimizing control** *(deep cut)*: Skogestad, S. "Plantwide control: the search for the
+self-optimizing control structure." *Journal of Process Control* 10, 487–507, 2000.
+https://skoge.folk.ntnu.no/publications/2000/self1/self1.pdf
+How to choose the controlled variables whose constant setpoints keep operation near-optimal under
+disturbances. The classical theory of what a supervisory layer above regulatory loops should
+hold constant.
 
-Model-based RL that plans over short horizons in a learned latent world model
-and bootstraps long-term value with TD learning. This is the black-box,
-learned-controller side of the comparison this thesis sets up: interpretable,
-security-checkable heuristic code (our approach) versus a high-performing but
-opaque neural policy (TD-MPC/TD-MPC2). Read enough to be able to state
-precisely what it can do that a hand-readable rule set can't (and vice
-versa) — that contrast is the thesis's actual research question.
+**Real-time optimization (RTO)**: Darby, M.L., Nikolaou, M., Jones, J., Nicholson, D. "RTO: An
+overview and assessment of current practice." *Journal of Process Control* 21(6), 874–884, 2011.
+Industrial practice of model-based setpoint optimization above the control layer: steady-state
+detection, data reconciliation, model updating and optimization. The classical counterpart of a
+setpoint-only supervisor.
 
-## Domain grounding: control in mineral processing
+**Industrial MPC survey**: Qin, S.J., Badgwell, T.A. "A survey of industrial model predictive
+control technology." *Control Engineering Practice* 11(7), 733–764, 2003.
+The standard overview of how MPC is configured and used in industry.
 
-**A survey of grinding circuit control methods: from decentralized PID
-controllers to multivariable predictive controllers** — Pomerleau, A.,
-Hodouin, D., Desbiens, A., Gagnon, E. *Powder Technology*, vol. 108, 2000,
-pp. 103–115. https://www.sciencedirect.com/science/article/abs/pii/S0032591099002077
+**Offset-free MPC** *(deep cut)*: Muske, K.R., Badgwell, T.A. "Disturbance modeling for
+offset-free linear model predictive control." *Journal of Process Control* 12, 617–632, 2002.
+Augments the plant model with disturbance states estimated by an observer, so that MPC removes
+steady-state offset. The theory behind the bias-update disturbance estimate in the MPC baseline.
 
-Older but directly on-target: grinding circuits (the real mining unit
-operation this toy leaky-tank/two-tank testbed is meant to eventually stand
-in for) are multivariable, coupled, and disturbance-heavy in exactly the way
-our two-tank cascade is a toy version of. Useful for grounding claims about
-why PID-only control is insufficient in the real process, and what
-"multivariable predictive control" was already doing before either MPC or
-LLM-guided heuristics entered the picture.
+## Oscillation detection and loop monitoring
 
-## Benchmarks for the RL/TD-MPC comparison
+**A control-loop performance monitor** *(deep cut)*: Hägglund, T. *Control Engineering Practice*
+3(11), 1543–1551, 1995. https://doi.org/10.1016/0967-0661(95)00164-P
+Detects oscillating loops automatically by integrating the absolute control error between zero
+crossings and counting large excursions, using only the normal controller parameters. A
+reference point for supervisors that must tell sustained oscillations from steps.
 
-Where to actually run a head-to-head once the toy testbeds are outgrown.
-Both of these are runnable now (a MATLAB/Simulink license is available for
-TEP).
+**Detection and diagnosis of oscillation in control loops** *(deep cut)*: Thornhill, N.F.,
+Hägglund, T. *Control Engineering Practice* 5(10), 1343–1354, 1997.
+Operational signatures that indicate the cause of a loop oscillation and which test to run to
+confirm it.
 
-**PC-Gym** — Bloor, M., Torraca, J., Sandoval, I.O., Ahmed, A., White, M.,
-Mercangöz, M., Tsay, C., Del Rio Chanona, E.A., Mowbray, M. "PC-Gym:
-Benchmark Environments For Process Control Problems." arXiv:2410.22093, 2024.
-https://arxiv.org/abs/2410.22093
-(code: https://github.com/MaximilianB2/pc-gym, PyPI: `pcgym`)
+## Model-based reinforcement learning baseline
 
-Best first stop: an open-source, pure-Python Gymnasium-style benchmark suite
-built specifically for comparing RL controllers against Nonlinear MPC on
-process-control problems (CSTRs, multistage extraction, crystallization
-reactors), with nonlinear dynamics, disturbances, and constraints already
-built in, and an NMPC oracle baseline included out of the box. No MATLAB
-dependency, `pip install pcgym` and go. The most direct route to a real
-RL-vs-(N)MPC-vs-our-supervisor comparison without building the harness
-ourselves.
+**TD-MPC**: Hansen, N., Wang, X., Su, H. "Temporal Difference Learning for Model Predictive
+Control." ICML 2022. https://proceedings.mlr.press/v162/hansen22a/hansen22a.pdf
 
-**Tennessee Eastman Process (TEP)** — original process: Downs, J.J., Vogel,
-E.F. "A plant-wide industrial process control problem." *Computers &
-Chemical Engineering*, vol. 17, 1993, pp. 245–255. Python interface: Reinartz,
-C., Enevoldsen, T.T. "pyTEP: A Python package for interactive simulations of
-the Tennessee Eastman process." *SoftwareX*, vol. 18, 2022, art. 101053.
-https://www.sciencedirect.com/science/article/pii/S2352711022000449
-(code: https://github.com/ccreinartz11/pytep — requires the MATLAB engine
-for Python, i.e. a licensed MATLAB/Simulink install)
+**TD-MPC2**: Hansen, N., Su, H., Wang, X. "TD-MPC2: Scalable, Robust World Models for Continuous
+Control." ICLR 2024, arXiv:2310.16828. https://arxiv.org/abs/2310.16828
 
-The historical gold-standard benchmark for fault detection/diagnosis and
-plant-wide control in a large, coupled, multivariable chemical process (12
-manipulated valves, 41 measurements, two simultaneous gas-liquid exothermic
-reactions) — decades of published PID/MPC/RL/fault-detection results exist to
-compare against. Thematically the closest match to what our supervisor is
-actually doing (anomaly detection + multivariable setpoint coordination),
-just at a much larger, industrially-realistic scale than the two-tank
-cascade. `pyTEP` wraps the original Fortran/Simulink simulator so the
-underlying process dynamics match the literature exactly, at the cost of
-needing MATLAB/Simulink installed to run it.
+Model-based RL that plans over a short horizon in a learned latent world model and bootstraps
+long-term value with temporal-difference learning. The learned, opaque side of the comparison
+with readable, security-checked supervisory code.
+
+## Process control and mineral processing
+
+**Grinding circuit control survey**: Pomerleau, A., Hodouin, D., Desbiens, A., Gagnon, É. "A survey
+of grinding circuit control methods: from decentralized PID controllers to multivariable
+predictive controllers." *Powder Technology* 108, 103–115, 2000.
+Grinding circuits are multivariable, coupled and disturbance-heavy. The survey covers control
+from decentralized PID to multivariable predictive control.
+
+**Grinding mill circuits: control and economics**: Wei, D., Craig, I.K. "Grinding mill circuits –
+A survey of control and economic concerns." *International Journal of Mineral Processing* 90,
+56–66, 2009.
+An industry survey of how milling circuits are controlled and how key process variables link to
+economic benefit.
+
+**Control, observation and optimization in mineral processing**: Hodouin, D. "Methods for
+automatic control, observation, and optimization in mineral processing plants." *Journal of
+Process Control* 21(2), 211–225, 2011.
+A review noting that PID still dominates mineral processing despite decades of advanced-control
+research. Calls for a hierarchical view that integrates sensors, observers, controllers and
+optimizers.
+
+**Run-of-mine grinding circuit model** *(deep cut)*: le Roux, J.D., Craig, I.K., Hulbert, D.G.,
+Hinde, A.L. "Analysis and validation of a run-of-mine ore grinding mill circuit model for process
+control." *Minerals Engineering* 43–44, 121–134, 2013.
+https://doi.org/10.1016/j.mineng.2012.10.009
+A compact nonlinear model with feeder, mill, sump and hydrocyclone modules, built for control
+studies. A candidate next test bed between the four-tank process and a full plant simulator.
+
+**Quadruple-tank process**: Johansson, K.H. "The quadruple-tank process: A multivariable
+laboratory process with an adjustable zero." *IEEE Transactions on Control Systems Technology*
+8(3), 456–465, 2000.
+The laboratory process behind the four-tank test bed, with interacting loops and a zero whose
+location depends on the valve split.
+
+**Relative gain array**: Bristol, E.H. "On a new measure of interaction for multivariable process
+control." *IEEE Transactions on Automatic Control* 11(1), 133–134, 1966.
+The interaction measure used to choose input-output pairings for decentralized loops.
+
+## Benchmarks
+
+**PC-Gym**: Bloor, M. et al. "PC-Gym: Benchmark Environments For Process Control Problems."
+arXiv:2410.22093, 2024. https://arxiv.org/abs/2410.22093 (code:
+https://github.com/MaximilianB2/pc-gym)
+An open-source Python suite of process-control environments with disturbances, constraints and a
+nonlinear-MPC oracle, built for comparing RL controllers with NMPC. The source of the four-tank
+model.
+
+**Tennessee Eastman Process**: Downs, J.J., Vogel, E.F. "A plant-wide industrial process control
+problem." *Computers & Chemical Engineering* 17, 245–255, 1993. Python interface: Reinartz, C.,
+Enevoldsen, T.T. "pyTEP: A Python package for interactive simulations of the Tennessee Eastman
+process." *SoftwareX* 18, 101053, 2022. https://github.com/ccreinartz11/pytep
+The standard plant-wide benchmark for fault detection and multivariable control, with decades of
+published results. pyTEP requires a MATLAB/Simulink installation.
+
+## Sandboxing generated code
+
+**Eval really is dangerous** *(deep cut)*: Batchelder, N. Blog post, 2012.
+https://nedbatchelder.com/blog/201206/eval_really_is_dangerous
+Shows how Python code run with an emptied namespace can still reach `__import__` and other
+internals through object attributes. The reason a restricted `exec` needs AST checks on dunder
+access, not just removed builtins.
