@@ -12,6 +12,11 @@ a floor on the score, and a base-layer pairing that made one scenario
 impossible. A perfect-detection oracle exposed the last two immediately
 once it was computed. Checking that the test bed is sound, and bounding what
 is achievable, should come before interpreting the progress of the search.
+The coordination runs showed the same for the promotion rule and the
+feedback: a regression guard per scenario blocked almost every promotion, and
+lessons written before scoring steered the search back to a change that had
+just failed, until the trainer recorded the measured effect of every change
+instead (Section~\ref{sec:coord-loop}).
 
 \section{What the LLM needs}
 Progress on the quadruple-tank process was much faster after the prompt
@@ -30,10 +35,38 @@ lessons and made avoidable coding mistakes. Because lessons are shown to
 later generations as constraints, an incorrect lesson can keep steering the
 search in the wrong direction. Low reasoning was enough to reach the oracle
 and was about six times cheaper than high reasoning, which also produced
-many empty, billed responses.
+many empty, billed responses. Setpoint coordination needed more: at low
+effort the search stalled for nine generations, and at high effort it
+promoted a candidate in each of four generations. That run also inherited
+the measured record of the stalled runs, so the effect of reasoning is not
+isolated there.
+
+\section{Coordination against MPC}
+On setpoint coordination, the best generated supervisor matched the MPC
+within 1.3\% on the development scenarios, but was 11\% worse on held-out
+scenarios and 6.7\% worse beyond the development range
+(Section~\ref{sec:coord-results}). Within the development range it is
+therefore competitive with, but not better than, a predictive controller
+with an online disturbance estimate. The held-out gap grew over the last two
+promotions, so a stricter guard or a held-out check before promotion may be
+needed to keep the search from fitting the development scenarios.
+
+The LLM arrived at a structure close to that of the MPC: an explicit
+steady-state model with an estimated disturbance, a search over setpoint
+pairs against a cost, and a feedback trim (Section~\ref{sec:coord-champion}).
+The difference is that every part of it is visible in one function, with its
+model and cost written out and its later additions commented, and that it
+needs only a 61-point search instead of closed-loop simulation over a
+horizon. Its trade-offs are also visible, which matters beyond the
+development range, where it held production closer to target than the MPC
+but violated the constraints for longer. Both trade-offs follow from weights
+that were chosen without the plant's operators: the MPC's by hand and the
+generated supervisor's by the LLM against a provisional score. In an
+industrial setting these priorities would have to be fixed with the
+operators before either controller is compared.
 
 \section{Interpretability}
-Every champion is a single Python function of 43 to 210 lines with named
+Every champion is a single Python function of 43 to 261 lines with named
 thresholds and a diagnosis string for each decision. The supervisor that
 matched the oracle on the quadruple-tank process
 (Appendix~\ref{app:supervisor}) has 43 lines and flags a tank when any of
@@ -50,8 +83,9 @@ learned black-box controller.
 \begin{itemize}
 \item The processes are small simulations with a single fault type (leaks),
   and the quadruple-tank process has noise-free measurements.
-\item Each configuration was trained once; the search is stochastic, so
-  repeated runs are needed for firm conclusions.
+\item Most configurations were trained once. The search is stochastic:
+  three coordination runs with identical settings ended at development
+  scores of 226 to 405, so repeated runs are needed for firm conclusions.
 \item The batteries are small (six to eight scenarios each), and the single-
   and two-tank supervisors generalized noticeably worse to the held-out
   scenarios.
@@ -59,6 +93,9 @@ learned black-box controller.
   supervisor can reduce it slightly by lowering the setpoint of a leaking
   tank without improving the process. On the quadruple-tank process this is
   worth about 10 points per scenario.
-\item No comparison with TD-MPC or any other learned controller has been made
-  yet.
+\item The coordination test bed is noise-free, the MPC's internal model is
+  exact apart from the disturbance, and the score weights are provisional.
+\item The coordination comparison is against an MPC written for this
+  thesis. No comparison with TD-MPC, any other learned controller or Weir's
+  controller has been made yet.
 \end{itemize}
