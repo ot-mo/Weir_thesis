@@ -2,8 +2,9 @@
 
 Run: python benchmark_coordination.py [per_cell]   (default 3, as in the trainer)
 
-Evaluates the fixed recipe (PID only), the MPC supervisor with an estimated
-disturbance, and the oracle MPC on three seeded batteries - development,
+Evaluates the fixed recipe (PID only), the original untuned MPC, the MPC
+tuned on the development battery (tune_mpc.py) and the tuned MPC with known
+current disturbance on three seeded batteries - development,
 held-out development (same ranges, new seeds) and beyond the development
 range - and writes per-episode metrics to results/coordination/baselines.csv.
 """
@@ -17,10 +18,10 @@ from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 
 import four_tank_coordination as C
-from mpc_supervisor import MPCSupervisor
+from mpc_supervisor import MPCSupervisor, tuned_params
 
 OUTPUT_PATH = os.path.join("results", "coordination", "baselines.csv")
-CONTROLLERS = ("fixed_recipe", "mpc_estimated", "mpc_oracle")
+CONTROLLERS = ("fixed_recipe", "mpc_untuned", "mpc_tuned", "mpc_known_disturbance")
 BATTERY_SEEDS = {"dev": 1, "heldout": 2, "beyond": 3}
 METRICS = ("production_iae_l", "band_violation_s", "upper_violation_s", "safety_violation_s",
            "setpoint_tv_m", "recovery_s", "saturation_s", "exceptions")
@@ -31,10 +32,12 @@ def _run(job):
     scenario = dataclasses.replace(scenario, supervisor_timeout_s=10.0)  # MPC needs ~50 ms per decision
     if controller == "fixed_recipe":
         fn = C.fixed_recipe_supervisor
-    elif controller == "mpc_estimated":
+    elif controller == "mpc_untuned":
         fn = MPCSupervisor()
+    elif controller == "mpc_tuned":
+        fn = MPCSupervisor(**tuned_params())
     else:
-        fn = MPCSupervisor(oracle_scenario=scenario)
+        fn = MPCSupervisor(oracle_scenario=scenario, **tuned_params())
     m = C.run_episode(fn, scenario)["metrics"]
     return {"controller": controller, "battery": battery_name, "scenario": scenario.name,
             "range": scenario.range_label, "kind": scenario.kind_label, "pattern": scenario.pattern_label,
@@ -59,13 +62,13 @@ def main():
         writer.writerows(rows)
 
     print(f"{len(rows)} episodes -> {OUTPUT_PATH}\n")
-    header = f"{'battery':8s} {'controller':14s} {'score':>8s} {'IAE L':>7s} {'band s':>7s} {'upper s':>8s} {'TV m':>6s} {'recov s':>8s} {'sat s':>6s}"
+    header = f"{'battery':8s} {'controller':22s} {'score':>8s} {'IAE L':>7s} {'band s':>7s} {'upper s':>8s} {'TV m':>6s} {'recov s':>8s} {'sat s':>6s}"
     print(header)
     for name in batteries:
         for c in CONTROLLERS:
             sel = [r for r in rows if r["battery"] == name and r["controller"] == c]
             mean = lambda k: np.mean([r[k] for r in sel])
-            print(f"{name:8s} {c:14s} {mean('score'):8.0f} {mean('production_iae_l'):7.0f} {mean('band_violation_s'):7.0f} "
+            print(f"{name:8s} {c:22s} {mean('score'):8.0f} {mean('production_iae_l'):7.0f} {mean('band_violation_s'):7.0f} "
                   f"{mean('upper_violation_s'):8.0f} {mean('setpoint_tv_m'):6.2f} {mean('recovery_s'):8.0f} {mean('saturation_s'):6.0f}")
         print()
 

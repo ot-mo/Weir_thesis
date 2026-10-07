@@ -905,11 +905,12 @@ def generate_report():
              f"Generated: {datetime.now(timezone.utc).isoformat(timespec='seconds')}", "",
              "## Current champion vs baselines", "",
              f"Source hash: `{champion.get('hash')}`", "",
-             "| Battery | LLM champion | Fixed recipe | MPC (estimated) | MPC (oracle) |", "|---|---|---|---|---|"]
+             "| Battery | LLM champion | Fixed recipe | MPC (untuned) | MPC (tuned) | MPC (known disturbance) |",
+             "|---|---|---|---|---|---|"]
     for battery, label in (("dev", "Development (drives promotion)"), ("heldout", "Held-out development"),
                            ("beyond", "Beyond development range (never shown to the LLM)")):
         cells = [f"{champion[battery]:.1f}" if battery in champion else "-"]
-        for c in ("fixed_recipe", "mpc_estimated", "mpc_oracle"):
+        for c in ("fixed_recipe", "mpc_untuned", "mpc_tuned", "mpc_known_disturbance"):
             cells.append(f"{baselines[(c, battery)]:.1f}" if (c, battery) in baselines else "-")
         lines.append(f"| {label} | " + " | ".join(cells) + " |")
     if not baselines:
