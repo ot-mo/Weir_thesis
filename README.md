@@ -248,15 +248,64 @@ and the prompt lists all of them for the run so failed changes are not repeated.
 The beyond-range battery is never shown to the LLM and only appears in the report,
 next to the baselines on identical scenarios.
 
-| Battery (42 / 42 / 36 scenarios) | Fixed recipe | MPC (estimated) | MPC (oracle) |
-|---|---|---|---|
-| Development | 533 | 204 | 193 |
-| Held-out development | 479 | 194 | 191 |
-| Beyond development range | 1,583 | 1,124 | 1,111 |
+### Results
 
-The best champion so far scores 226 / 242 / 1,277 (`window50_run2`, re-scored on
-these batteries); the best 600 s champion 231.5 / 247.5 / 1,339
-(`window600_guardschedule`). See the runs index for all of them.
+All scores on the same batteries (42 development / 42 held-out development / 36 beyond the
+development range, 600 s window); lower is better. The beyond-range battery is never shown to
+the LLM.
+
+| Controller | Development | Held-out | Beyond range |
+|---|---|---|---|
+| Fixed recipe (PID loops only; the seed) | 533.4 | 478.7 | 1,583.0 |
+| LLM champion, `window50_run2` (50 s window) | 226.3 | 242.2 | 1,276.9 |
+| LLM champion, `window600_guardschedule` (600 s, reasoning effort low) | 231.5 | 247.5 | 1,339.3 |
+| LLM champion, `window600_high` (600 s, reasoning effort high) | **206.3** | **214.9** | 1,199.2 |
+| MPC, estimated disturbance | 203.7 | 193.8 | 1,123.6 |
+| MPC, oracle (true disturbance) | 192.9 | 191.1 | 1,110.9 |
+
+The best beyond-range score among the LLM champions is still `window50_run1`'s 1,189.8 (its
+development score is 255.6). The runs index has every run.
+
+### Why the window is 600 s
+
+The supervisor is stateless: it is reloaded for every call and its only memory is the
+telemetry window. With the earlier 50 s window it could not tell an oscillating disturbance
+(periods 200-500 s) from a ramp or a step, and it could not see its own setpoint changes or a
+production-target change settling (about 70 s to within 2 %, about 115 s to within 0.5 %). In
+the 50 s runs, champions read the target-change transient as a disturbance and chattered their
+setpoints. The 600 s window covers more than one oscillation period and the full settling time,
+and each sample now also carries the active setpoints and production target. Three scenarios
+per cell instead of one were introduced at the same time, so that one noisy scenario weighs
+less in the score and in the regression guard.
+
+### What moved the 600 s champion
+
+The 600 s runs changed one part of the training loop at a time (details in the runs index):
+
+1. `window600_fixedguard`: no promotion. Every candidate that beat the seed's average (best 258
+   against 533) was rejected by the regression guard, so the model kept seeing only the seed.
+2. `window600_guardschedule`: a guard that is loose in the first generations gave the first
+   promotion, 231.5. The later candidates rewrote the whole supervisor (keeping 16-65 % of it)
+   and each fixed one scenario while breaking others.
+3. `window600_onechange`: with one targeted change per candidate, candidates kept 84-98 % of
+   the code, but all nine changed the load estimate the same way (averaging it), which fixed
+   oscillations and broke steps. The lessons saved in those runs came from candidates that had
+   made the score worse and pointed back at that change.
+4. `window600_measured`: lessons kept only from promoted candidates, and every tried change
+   recorded by the trainer with its measured effect. The model moved on to oscillation-aware
+   estimators (best 241.5) but nothing was promoted. Its first generation repeated old
+   failures because a new run started without that record, so `--from` now passes it on.
+5. `window600_high`: the same loop at reasoning effort high, starting with the inherited
+   record. Four promotions in four generations, 231.5 to 206.3: a pump-gain estimate corrected
+   for upper-tank storage, a feedback trim on the tank-1 setpoint from the measured production
+   error, that trim made predictive, and a shorter hold after the supervisor's own setpoint
+   changes. About 80k output tokens per request against 16-40k at effort low; 12 requests,
+   about $0.63.
+
+High effort and the inherited record were introduced in the same run, so this single run does
+not separate their effects. Development improved faster than held-out over the last two
+generations (the gap grew from about 2 to about 9 points), which is worth watching for
+overfitting to the development battery.
 
 ## Status / open threads
 
