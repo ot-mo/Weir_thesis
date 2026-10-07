@@ -75,11 +75,13 @@ def production_lps(h1, h2, p=None):
     return 1000.0 * (p["a1"] * np.sqrt(2 * p["g"] * max(h1, 0.0)) + p["a2"] * np.sqrt(2 * p["g"] * max(h2, 0.0)))
 
 
-def steady_state(sp1, sp2, k1_mult=1.0, k2_mult=1.0, gamma1_shift=0.0, gamma2_shift=0.0, d1_lps=0.0, d2_lps=0.0):
+def steady_state(sp1, sp2, k1_mult=1.0, k2_mult=1.0, gamma1_shift=0.0, gamma2_shift=0.0, d1_lps=0.0, d2_lps=0.0,
+                 p=None):
     """Steady state of the plant with h1/h2 held at (sp1, sp2) by the loops:
     pump voltages and upper-tank levels. Voltages outside PUMP_LIMITS mean the
-    loops cannot actually hold that operating point."""
-    p = plant_params()
+    loops cannot actually hold that operating point. p: plant parameters
+    (default: nominal)."""
+    p = p or plant_params()
     k1, k2 = p["k1"] * k1_mult, p["k2"] * k2_mult
     g1, g2 = p["gamma_1"] + gamma1_shift, p["gamma_2"] + gamma2_shift
     q1 = p["a1"] * np.sqrt(2 * p["g"] * sp1) - d1_lps / 1000.0
@@ -132,6 +134,19 @@ class CoordinationScenario:
     supervisor_timeout_s: float = 0.5
     sensor_noise_std: float = 0.0
     seed: int = 0
+    # Stress conditions (stress_test_coordination.py), all off by default:
+    # - plant_scale: ((parameter, factor), ...) applied to the simulated plant
+    #   only, so every controller's built-in model is off by that factor;
+    # - production_delay_s / production_hold_s: the telemetry's production
+    #   value is delayed and sample-held, like a particle-size analyser (the
+    #   score still uses the true production);
+    # - telemetry_faults: ((signal, "nan" | "stuck", start_s), ...) in the
+    #   telemetry the supervisor reads; the PI loops keep their own
+    #   measurements.
+    plant_scale: tuple = ()
+    production_delay_s: float = 0.0
+    production_hold_s: float = 0.0
+    telemetry_faults: tuple = ()
     events: tuple = field(default=())  # times used for recovery_time; filled by the battery builder
 
 
@@ -236,7 +251,7 @@ def _make_pid(setpoint, steady_voltage, dt):
     return pid
 
 
-def _telemetry_sample(t, levels, v1, v2, sp, target, p):
+def _telemetry_sample(t, levels, v1, v2, sp, target, p, production=None):
     """One logged sample. Besides the measurements it carries the setpoints
     and production target that were active, as a DCS logs them: a stateless
     supervisor otherwise cannot see its own recent setpoint changes, and the
@@ -245,7 +260,8 @@ def _telemetry_sample(t, levels, v1, v2, sp, target, p):
     return {"time": t, "h1": round(float(levels[0]), 4), "h2": round(float(levels[1]), 4),
             "h3": round(float(levels[2]), 4), "h4": round(float(levels[3]), 4),
             "v1": round(float(v1), 3), "v2": round(float(v2), 3),
-            "production": round(float(production_lps(max(levels[0], 0.0), max(levels[1], 0.0), p)), 3),
+            "production": round(float(production if production is not None
+                                      else production_lps(max(levels[0], 0.0), max(levels[1], 0.0), p)), 3),
             "sp_h1": round(float(sp["h1"]), 4), "sp_h2": round(float(sp["h2"]), 4),
             "production_target": round(float(target), 3)}
 
@@ -276,12 +292,41 @@ def _wrap_setpoints(decision, sp):
     return new, notes, invalid
 
 
+def _reported_production(measured_q, k, scenario, steady_q):
+    """Production as the telemetry reports it: delayed and sample-held if the
+    scenario says so. measured_q[k] is the value at step k."""
+    if not scenario.production_delay_s and not scenario.production_hold_s:
+        return measured_q[k]
+    t_seen = k * scenario.dt - scenario.production_delay_s
+    if scenario.production_hold_s:
+        t_seen = np.floor(t_seen / scenario.production_hold_s) * scenario.production_hold_s
+    idx = int(round(t_seen / scenario.dt))
+    return measured_q[idx] if idx >= 0 else steady_q
+
+
+def _apply_telemetry_faults(sample, t, scenario, stuck):
+    for signal, kind, start in scenario.telemetry_faults:
+        if t < start:
+            continue
+        if kind == "nan":
+            sample[signal] = float("nan")
+        elif kind == "stuck":
+            sample[signal] = stuck.setdefault(signal, sample[signal])
+        else:
+            raise ValueError(kind)
+    return sample
+
+
 def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict:
     p = plant_params()
+    for name, factor in scenario.plant_scale:
+        p[name] *= factor
     model = four_tank(int_method="numpy")
+    for name in ("a1", "a2", "a3", "a4", "A1", "A2", "A3", "A4"):
+        setattr(model, name, p[name])
     rng = np.random.default_rng(scenario.seed)
     sp = dict(NOMINAL_SETPOINTS)
-    ss = steady_state(sp["h1"], sp["h2"])
+    ss = steady_state(sp["h1"], sp["h2"], p=p)
     x = np.array([sp["h1"], sp["h2"], ss["h3"], ss["h4"]], dtype=float)
     # Cross pairing: the h1 loop drives pump 2, the h2 loop drives pump 1.
     loop_h1 = _make_pid(sp["h1"], ss["v2"], scenario.dt)
@@ -296,6 +341,8 @@ def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict
     # already full of history.
     telemetry = [_telemetry_sample(-(scenario.window_steps - i) * scenario.dt, x, ss["v1"], ss["v2"], sp, target, p)
                  for i in range(scenario.window_steps)]
+    steady_q = production_lps(x[0], x[1], p)
+    measured_q, stuck = [], {}
 
     for k in range(nsteps):
         t = k * scenario.dt
@@ -317,7 +364,10 @@ def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict
         for key, val in (("t", t), ("h1", x[0]), ("h2", x[1]), ("h3", x[2]), ("h4", x[3]), ("v1", v1), ("v2", v2),
                          ("q", q), ("target", target), ("sp1", sp["h1"]), ("sp2", sp["h2"])):
             hist[key].append(float(val))
-        telemetry.append(_telemetry_sample(t, meas, v1, v2, sp, target, p))
+        measured_q.append(production_lps(max(meas[0], 0.0), max(meas[1], 0.0), p))
+        sample = _telemetry_sample(t, meas, v1, v2, sp, target, p,
+                                   production=_reported_production(measured_q, k, scenario, steady_q))
+        telemetry.append(_apply_telemetry_faults(sample, t, scenario, stuck))
 
         if k > 0 and k % scenario.decision_interval_steps == 0:
             recent = telemetry[-scenario.window_steps:]
