@@ -215,7 +215,11 @@ IAE, constraint-violation time, setpoint total variation and recovery time.
 (online disturbance estimate, plus an oracle variant).
 
 ```bash
-python benchmark_coordination.py [per_cell]   # fixed recipe vs MPC vs oracle MPC, no API calls
+python benchmark_coordination.py [per_cell]   # fixed recipe vs untuned / tuned / known-disturbance MPC, no API calls
+python tune_mpc.py [budget]                   # tune the MPC on the dev battery (default 40 configurations), no API calls
+python stress_test_coordination.py [--runs RUN ...]   # noise, plant mismatch, analyser delay, telemetry faults, no API calls
+python evaluate_sealed_test.py --unseal "REASON" --runs RUN ... --baselines   # the sealed test battery, once, logged
+python analyze_protocol.py --scores CSV --runs RUN ...   # pre-registered statistics (--dry-run on validation batteries)
 python train_supervisor_coordination.py [num_generations] --run NAME [--from RUN] [--model deepseek-flash|gpt-6-luna|gpt-6.1-sol] [--effort low]  # LLM meta-supervisor (billed)
 python train_supervisor_coordination.py --report --run NAME                             # champion vs baselines, no API calls
 ```
@@ -259,12 +263,46 @@ the LLM.
 | Fixed recipe (PID loops only; the seed) | 533.4 | 478.7 | 1,583.0 |
 | LLM champion, `window50_run2` (50 s window) | 226.3 | 242.2 | 1,276.9 |
 | LLM champion, `window600_guardschedule` (600 s, reasoning effort low) | 231.5 | 247.5 | 1,339.3 |
-| LLM champion, `window600_high` (600 s, reasoning effort high) | **206.3** | **214.9** | 1,199.2 |
-| MPC, estimated disturbance | 203.7 | 193.8 | 1,123.6 |
-| MPC, oracle (true disturbance) | 192.9 | 191.1 | 1,110.9 |
+| LLM champion, `window600_high` (600 s, reasoning effort high) | 206.3 | 214.9 | 1,199.2 |
+| MPC, untuned (original) | 203.7 | 193.8 | 1,123.6 |
+| **MPC, tuned on the development battery** | **133.9** | **157.2** | **732.3** |
+| MPC, tuned, known current disturbance | 118.4 | 144.0 | 701.6 |
 
 The best beyond-range score among the LLM champions is still `window50_run1`'s 1,189.8 (its
 development score is 255.6). The runs index has every run.
+
+The earlier impression that the LLM champion nearly matched MPC came from an untuned baseline.
+Its cost penalised the squared size of a constraint violation while the score counts every second
+of it, so a 1 mm violation was nearly free. `tune_mpc.py` gives the MPC a score-aligned cost and a
+tuning budget comparable to the LLM's: 40 configurations on the development battery, against about
+40 candidates in the champion's lineage. The tuned MPC is clearly better on all three batteries.
+
+### Protocol
+
+These numbers come from a single lineage of runs, steered by hand, on batteries that were looked
+at after every redesign of the loop. [results/coordination/PROTOCOL.md](results/coordination/PROTOCOL.md)
+fixes everything before the confirmatory runs:
+- the method;
+- 8 independent runs of 6 generations from the seed;
+- the tuned MPC as the comparator;
+- a sealed test battery of 183 scenarios, with graded amplitude levels and unseen periods and
+  combinations (`coordination_test_battery.py`), opened once by `evaluate_sealed_test.py`;
+- the statistics (`analyze_protocol.py`).
+
+Every supervisor now runs behind a fixed safety wrapper in the test bed: NaN and range checks, a
+0.12 m-per-call rate limit, and a hold on invalid input or output.
+[results/coordination/stress_tests.md](results/coordination/stress_tests.md) shows the
+controllers under sensor noise, plant mismatch, analyser delay and telemetry faults. These results
+are exploratory, on the validation batteries:
+- **Sensor noise.** The tuned MPC is fragile: +45 % at 1 mm and +151 % at 3 mm, because of its
+  fast disturbance estimator. The LLM champion changes by -1 % and +6 %.
+- **Plant mismatch.** With every plant parameter off by up to 10 %, all model-based controllers
+  degrade by 120-470 %. None of them has integral action on the production error, so they believe
+  production is on target when it is not.
+- **Analyser delay.** Only the LLM champion reads the production field, so only it is affected
+  by a delayed or frozen analyser (+11-14 %).
+- **NaN on h3.** The wrapper holds the setpoints from the fault onwards. That is safe but crude:
+  +14-203 % for every controller.
 
 ### Why the window is 600 s
 

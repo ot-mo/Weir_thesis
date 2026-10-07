@@ -33,8 +33,13 @@ Champion scores are re-scored on the current batteries (600 s window, 3 scenario
 | `window600_measured` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion (`--from`); lessons only from promoted candidates, measured record of every tried change in the prompt | 3 x 3 | 0 | $0.21 | 231.5 / 247.5 / 1339.3 (seed) |
 | `window600_high` | 2026-10-05 | Seeded with `window600_measured`'s champion, inheriting its 9 measured attempts; reasoning effort **high** (gens 1-2, then continued for gens 3-4) | 4 x 3 | 4 | $0.63 | **206.3 / 214.9** / 1199.2 |
 
-Baselines on the same batteries: fixed recipe 533.4 / 478.7 / 1583.0, MPC 203.7 / 193.8 / 1123.6,
-oracle MPC 192.9 / 191.1 / 1110.9.
+Baselines on the same batteries (with the safety wrapper): fixed recipe 533.4 / 478.7 / 1583.0, untuned
+MPC 203.7 / 193.8 / 1123.6, MPC tuned on the development battery (`tune_mpc.py`) 133.9 / 157.2 / 732.3,
+tuned MPC with known current disturbance 118.4 / 144.0 / 701.6.
+
+All runs above are exploratory: the loop changed between them and the batteries were looked at after
+each one. The confirmatory runs follow [PROTOCOL.md](PROTOCOL.md) (`protocol_run1` ... `protocol_run8`) and
+are evaluated on the sealed test battery.
 
 ## Notes
 
