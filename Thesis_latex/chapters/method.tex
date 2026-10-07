@@ -45,7 +45,9 @@ the level, the output of the loop regulating it (pump effort) and the control
 error. The function returns a free-text diagnosis, one adjusted setpoint per
 loop (clamped to an allowed range) and one boolean anomaly flag per loop. It
 is stateless: it is reloaded for every run and sees only its arguments.
-The returned flags are held until the next decision.
+The returned flags are held until the next decision. The setpoint-coordination
+experiments in Chapter~\ref{ch:coord} use a variant of this interface
+without anomaly flags.
 
 \section{Security sandbox}
 \label{sec:sandbox}
