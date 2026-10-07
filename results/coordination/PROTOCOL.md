@@ -1,6 +1,6 @@
 # Pre-registered protocol: LLM-synthesized supervisor vs MPC on the four-tank coordination test bed
 
-Status: **registered**. The commit that adds this file fixes the protocol. Nothing listed under
+Status: **registered, version 2** (see Changelog). The commit that adds the current version fixes the protocol. Nothing listed under
 "Frozen" may change between that commit and the final analysis. Any change creates a new protocol
 version (a new commit of this file, with a changelog entry) and restarts the runs. Runs started
 under an earlier version are reported, not discarded.
@@ -26,6 +26,9 @@ statistics before any result exists. See the council review summarized in the co
 
 **Test bed:** `four_tank_coordination.py` as of the registration commit.
 - 600 s window, called every 10 s, 1200 s episodes.
+- PI level loops (`PI_GAINS`, cross-paired): h1 loop Kp 15 V/m, Ti 133 s; h2 loop Kp 40 V/m, Ti 200 s.
+  These are the lowest load-disturbance IAE with Ms <= 1.6 from `tune_pi_coordination.py`, giving
+  Ms 1.56.
 - `SCORE_WEIGHTS` = production IAE 1 per L, h2-band violation 2 per s, upper-level violation 2 per
   s, safety violation 10 per s, setpoint travel 100 per m, exception 1000 each. These were marked
   provisional earlier and are frozen here.
@@ -70,13 +73,13 @@ after generation 6. It is not chosen by held-out or any other score ("the last c
 
 **Comparators (baselines):**
 - **Primary: `mpc_tuned`.** The MPC of `mpc_supervisor.py` with the parameters in
-  `results/coordination/mpc_tuned_params.json` (added in commit 9ad17d3): score-aligned cost, 150 s
-  horizon, estimator gain 0.712, headroom weight 8.601, margin 0.0056 m, travel price ×0.669. It
+  `results/coordination/mpc_tuned_params.json` (as of commit 1411e99): score-aligned cost, 200 s
+  horizon, estimator gain 0.774, headroom weight 27.39, margin 0.0128 m, travel price ×3.78. It
   was chosen by `tune_mpc.py` from 40 configurations on the development battery, a budget
   comparable to the roughly 40 candidates in the `window600_high` champion's lineage.
 - Secondary: `mpc_untuned` (the original MPC).
 - Reference: `fixed_recipe`, and `mpc_known_disturbance` (the tuned MPC with known current
-  disturbance; not an upper bound, it loses to `mpc_tuned` on 16 of 120 validation scenarios).
+  disturbance; not an upper bound, it loses to `mpc_tuned` on 19 of 120 validation scenarios).
 
 ## Final evaluation and analysis
 
@@ -120,9 +123,9 @@ look at the test battery is logged with a reason and reported in the thesis.
 
 **Exploratory, not confirmatory:**
 - **Stress tests** (`stress_test_coordination.py`, on the validation batteries): sensor noise,
-  plant mismatch, analyser delay and telemetry faults. Run once before registration on the
-  `window600_high` champion and the baselines (`results/coordination/stress_tests.md`). They may
-  be repeated on the protocol policies.
+  plant mismatch, analyser delay and telemetry faults. Run before registration on the
+  `window600_high` champion and the baselines, and re-run for v2 with the retuned loops
+  (`results/coordination/stress_tests.md`). They may be repeated on the protocol policies.
 - **Planned ablations**, each run under its own name after the protocol runs:
   - a prompt without the plant equations and parameters (transfer to a plant without a white-box
     model);
@@ -145,3 +148,12 @@ look at the test battery is logged with a reason and reported in the thesis.
 ## Changelog
 
 - v1 (2026-10-07): registered.
+- v2 (2026-10-07): before any protocol run and before any access to the sealed battery, the PI level
+  loops were retuned for robustness. The previous gains (Kp 40, Ti 133 s on both loops, copied from the
+  leak test bed) had Ms 2.98 and 40 % overshoot, while the real plant's loops can be assumed to be well
+  tuned. Because the plant changed, everything that depends on it was redone:
+  - the MPC was re-tuned with the same procedure (config 31, dev 158.8; was config 2, 133.9);
+  - the baselines and stress tests were re-run, and the analysis dry run was repeated;
+  - the prompt now states the new gains and the re-measured loop transient.
+
+  The battery definitions, score weights, method, N, generations and statistics are unchanged.
