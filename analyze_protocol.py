@@ -16,8 +16,10 @@ Statistics (fixed in results/coordination/PROTOCOL.md):
   development range, 1.25, 1.5, 2; disturbance scenarios only), LLM (mean
   over policies) minus tuned MPC, 95 % CI from the same bootstrap with
   scenarios resampled within each level. H0,2 is rejected if the CI excludes 0.
-- C3: per-policy mean scores (median, IQR, range), their SD with a bootstrap
-  CI, and the number of runs with no promotion.
+- C3: per-policy mean scores (median, IQR, range), their SD with a 95 % CI
+  from the chi-square distribution (a percentile bootstrap cannot exceed the
+  spread in the sample and is biased low for few policies; it is reported as
+  well), and the number of runs with no promotion.
 - Secondary: per-metric paired differences on the development range,
   bootstrap p-values, Holm-adjusted; unseen periods and combinations as
   LLM/MPC score ratios with CIs.
@@ -31,6 +33,7 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
+from scipy import stats
 
 import four_tank_coordination as C
 from mpc_supervisor import MPCSupervisor, tuned_params
@@ -156,10 +159,13 @@ def c3(rows, runs, rng):
         path = os.path.join(RESULTS_DIR, r, "trials.jsonl")
         trials = [json.loads(l) for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
         promotions[r] = sum(t["decision"] == "PROMOTED" for t in trials)
+    n, sd = len(runs), float(np.std(per_policy, ddof=1))
+    chi2_ci = [sd * np.sqrt((n - 1) / stats.chi2.ppf(0.975, n - 1)), sd * np.sqrt((n - 1) / stats.chi2.ppf(0.025, n - 1))]
     q1, med, q3 = np.percentile(per_policy, [25, 50, 75])
     return {"per_policy": dict(zip(runs, per_policy.round(2).tolist())), "median": float(med), "iqr": [float(q1), float(q3)],
-            "range": [float(per_policy.min()), float(per_policy.max())], "sd": float(np.std(per_policy, ddof=1)),
-            "sd_ci95": np.percentile(boot, [2.5, 97.5]).tolist(), "promotions": promotions,
+            "range": [float(per_policy.min()), float(per_policy.max())], "sd": sd,
+            "sd_ci95": [float(v) for v in chi2_ci], "sd_ci95_bootstrap": np.percentile(boot, [2.5, 97.5]).tolist(),
+            "promotions": promotions,
             "runs_without_promotion": sum(v == 0 for v in promotions.values())}
 
 
@@ -208,7 +214,8 @@ def report(rows, runs, label):
              "## C3 (variance between independently generated policies)", "",
              f"- Per-policy mean (development range): {c['per_policy']}",
              f"- Median {f(c['median'])}, IQR {f(c['iqr'][0])}-{f(c['iqr'][1])}, range {f(c['range'][0])}-{f(c['range'][1])}, "
-             f"SD {f(c['sd'])} (95 % CI {f(c['sd_ci95'][0])}-{f(c['sd_ci95'][1])}).",
+             f"SD {f(c['sd'])} (95 % CI {f(c['sd_ci95'][0])}-{f(c['sd_ci95'][1])}, chi-square; bootstrap "
+             f"{f(c['sd_ci95_bootstrap'][0])}-{f(c['sd_ci95_bootstrap'][1])}).",
              f"- Promotions per run: {c['promotions']}; runs without a promotion: {c['runs_without_promotion']}.", "",
              "## Secondary: per-metric differences (development range, Holm-adjusted)", "",
              "| Metric | LLM | MPC | p | p (Holm) |", "|---|---|---|---|---|"]
