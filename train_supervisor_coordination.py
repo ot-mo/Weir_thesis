@@ -492,7 +492,10 @@ HOW YOUR FUNCTION IS CALLED:
   at that time, so you can see your own recent setpoint changes and any target change in the window.
 - The function is stateless: it is re-loaded fresh and keeps no memory between calls; everything
   it knows comes from the current window and its arguments.
-- The setpoints you return are clamped to setpoint_limits and held until the next call.
+- The setpoints you return are clamped to setpoint_limits and held until the next call. A fixed
+  safety wrapper outside your code also limits each setpoint change to {C.MAX_SETPOINT_STEP:g} m per call, holds a
+  setpoint that is missing or not a finite number (counted as an exception), and skips your call
+  when the latest telemetry sample is not finite.
 
 The function signature MUST remain exactly:
 def supervise(telemetry_window, active_setpoints, objectives):
@@ -845,7 +848,7 @@ def _next_trial_start():
 
 
 def _read_trials():
-    if not os.path.exists(TRIALS_PATH):
+    if not TRIALS_PATH or not os.path.exists(TRIALS_PATH):
         return []
     with open(TRIALS_PATH, "r", encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]

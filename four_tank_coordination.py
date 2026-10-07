@@ -48,6 +48,22 @@ PUMP_LIMITS = (1.0, 12.0)
 PID_KP, PID_KI = 40.0, 0.3      # cross-paired PI loops, as in pcgym_four_tank.py
 RECOVERY_TOLERANCE = 0.02       # settled once |Q - Q*| <= 2% of Q* for good
 
+# Safety wrapper: fixed, human-written checks between every supervisor and the
+# PI loops, applied to every controller alike, so that safety does not depend
+# on code the LLM wrote (a later generation could delete its own rate limit,
+# and a NaN setpoint used to be clamped straight to the lower limit).
+# - A non-finite value in the latest telemetry sample: the supervisor is not
+#   called and both setpoints are held.
+# - A missing or non-finite setpoint in its output (or no dict at all): that
+#   setpoint is held and the call counts as an exception, scored like one.
+# - Setpoints are clamped to SETPOINT_LIMITS and may move at most
+#   MAX_SETPOINT_STEP per call.
+# Every intervention is logged per decision and counted in the metrics.
+# MAX_SETPOINT_STEP is a safety net, not a performance limit: the largest
+# per-call steps on the dev, held-out and beyond batteries were 0.066 m (fixed
+# recipe), 0.080 m (window600_high champion) and 0.106 m (MPC).
+MAX_SETPOINT_STEP = 0.12
+
 
 def plant_params():
     m = four_tank(int_method="numpy")
@@ -234,6 +250,32 @@ def _telemetry_sample(t, levels, v1, v2, sp, target, p):
             "production_target": round(float(target), 3)}
 
 
+def _wrap_setpoints(decision, sp):
+    """The safety wrapper's output checks. Returns (new setpoints, notes,
+    invalid), where notes lists every change the wrapper made and invalid
+    means the output itself was unusable."""
+    proposed = decision.get("adjusted_setpoints") if isinstance(decision, dict) else None
+    new, notes, invalid = {}, [], not isinstance(proposed, dict)
+    for name in ("h1", "h2"):
+        try:
+            value = float(proposed[name]) if isinstance(proposed, dict) and name in proposed else sp[name]
+        except (TypeError, ValueError):
+            value = float("nan")
+        if not np.isfinite(value):
+            notes.append(f"{name}_not_finite_held")
+            invalid, value = True, sp[name]
+        clamped = min(SETPOINT_LIMITS[1], max(SETPOINT_LIMITS[0], value))
+        if clamped != value:
+            notes.append(f"{name}_clamped")
+        limited = min(sp[name] + MAX_SETPOINT_STEP, max(sp[name] - MAX_SETPOINT_STEP, clamped))
+        if limited != clamped:
+            notes.append(f"{name}_rate_limited")
+        new[name] = limited
+    if invalid and not isinstance(proposed, dict):
+        notes.append("output_not_a_dict_held")
+    return new, notes, invalid
+
+
 def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict:
     p = plant_params()
     model = four_tank(int_method="numpy")
@@ -249,7 +291,7 @@ def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict
 
     nsteps = int(scenario.sim_time / scenario.dt)
     hist = {k: [] for k in ("t", "h1", "h2", "h3", "h4", "v1", "v2", "q", "target", "sp1", "sp2")}
-    decisions, exceptions = [], 0
+    decisions, exceptions, interventions = [], 0, 0
     # The plant was in steady operation before t=0, so the first window is
     # already full of history.
     telemetry = [_telemetry_sample(-(scenario.window_steps - i) * scenario.dt, x, ss["v1"], ss["v2"], sp, target, p)
@@ -283,20 +325,25 @@ def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict
             window = [dict(s, time=s["time"] - t0) for s in recent]
             objectives = {"production_target": target, "h2_band": list(H2_BAND),
                           "upper_level_limit": UPPER_LEVEL_LIMIT, "setpoint_limits": list(SETPOINT_LIMITS)}
-            decision, err = call_with_timeout(supervisor_fn, (window, dict(sp), objectives),
-                                              timeout_s=scenario.supervisor_timeout_s)
-            if err is not None:
-                exceptions += 1
-                decision = {"diagnosis": f"SUPERVISOR_FAILURE: {err}", "adjusted_setpoints": dict(sp)}
-            proposed = decision.get("adjusted_setpoints", {}) or {}
-            for name in ("h1", "h2"):
-                value = float(proposed.get(name, sp[name]))
-                sp[name] = min(SETPOINT_LIMITS[1], max(SETPOINT_LIMITS[0], value))
+            if not all(np.isfinite(v) for key, v in telemetry[-1].items() if key != "time"):
+                decision, notes = {"diagnosis": "WRAPPER: telemetry not finite, setpoints held"}, ["input_not_finite_held"]
+                interventions += 1
+            else:
+                decision, err = call_with_timeout(supervisor_fn, (window, dict(sp), objectives),
+                                                  timeout_s=scenario.supervisor_timeout_s)
+                if err is not None:
+                    exceptions += 1
+                    decision = {"diagnosis": f"SUPERVISOR_FAILURE: {err}", "adjusted_setpoints": dict(sp)}
+                new_sp, notes, invalid = _wrap_setpoints(decision, sp)
+                exceptions += int(invalid)
+                interventions += int(any(not n.endswith("_clamped") for n in notes))
+                sp.update(new_sp)
             decisions.append({"time_s": t, "setpoints": dict(sp), "target": target,
-                              "diagnosis": str(decision.get("diagnosis", ""))})
+                              "diagnosis": str(decision.get("diagnosis", "")) if isinstance(decision, dict) else "",
+                              "wrapper": notes})
 
     return {"scenario": scenario.name, "hist": hist, "decisions": decisions,
-            "metrics": compute_metrics(hist, scenario, exceptions)}
+            "metrics": compute_metrics(hist, scenario, exceptions, interventions)}
 
 
 # Provisional weights for a single score (lower is better), needed later to
@@ -311,7 +358,7 @@ def score(metrics):
     return float(sum(w * metrics[k] for k, w in SCORE_WEIGHTS.items()))
 
 
-def compute_metrics(hist, scenario, exceptions=0):
+def compute_metrics(hist, scenario, exceptions=0, interventions=0):
     dt = scenario.dt
     q, target = np.array(hist["q"]), np.array(hist["target"])
     h2, h3, h4 = np.array(hist["h2"]), np.array(hist["h3"]), np.array(hist["h4"])
@@ -343,4 +390,7 @@ def compute_metrics(hist, scenario, exceptions=0):
                                      | (np.maximum(v1, v2) >= PUMP_LIMITS[1] - 1e-6)) * dt),
         "recovery_s": float(np.mean(recoveries)) if recoveries else 0.0,
         "exceptions": int(exceptions),
+        # Decisions where the safety wrapper held or rate-limited a setpoint
+        # (clamping to the setpoint limits is not counted); not in the score.
+        "wrapper_interventions": int(interventions),
     }
