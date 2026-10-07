@@ -15,27 +15,30 @@ on the four-tank setpoint-coordination test bed. Each run has two folders with t
 
 ## Runs
 
-Champion scores are re-scored on the current batteries (600 s window, 3 scenarios per cell:
-42 dev / 42 held-out / 36 beyond), so every row is comparable. Lower is better.
+Champion scores are re-scored with the current test bed (600 s window, 3 scenarios per cell: 42 dev /
+42 held-out / 36 beyond, retuned PI loops; `rescore_champions_coordination.py`, per-scenario values in
+`champion_rescores.csv`), so every row is comparable. Lower is better. All these runs were trained with
+the previous PI loops (Kp 40, Ti 133 s on both); their champions lost 13-96 points on dev when re-scored (`window600_high` 59)
+with the retuned loops, because their hard-coded timing fits the old regulatory dynamics.
 
 | Run | Date | Setup (change from the run above) | Gens x candidates | Promoted | Est. cost | Champion dev / held-out / beyond |
 |---|---|---|---|---|---|---|
-| `window50_default` | 2026-10-01 | First run: 50 s window, 1 scenario per cell, per-scenario guard | 2 x 4 | 2 | $0.31 | 252.1 / 241.3 / 1260.8 |
-| `window50_strictguard_run1` | 2026-10-01 | Three independent runs from the seed, same setup | 2 x 4 | 0 | $0.27 | 533.4 / 478.7 / 1583.0 (seed) |
-| `window50_strictguard_run2` | 2026-10-01 | | 2 x 4 | 0 | $0.30 | 533.4 / 478.7 / 1583.0 (seed) |
-| `window50_strictguard_run3` | 2026-10-01 | | 2 x 4 | 0 | $0.26 | 533.4 / 478.7 / 1583.0 (seed) |
-| `window50_run1` | 2026-10-01 | Looser guard (per scenario, relative to the battery average) | 4 x 4 | 1 | $0.53 | 255.6 / 243.2 / 1189.8 |
-| `window50_run2` | 2026-10-01 | | 4 x 4 | 2 | $0.35 | 226.3 / 242.2 / 1276.9 |
-| `window50_run3` | 2026-10-01 | | 4 x 4 | 1 | $0.40 | 404.7 / 358.2 / 1390.4 |
-| `window600_fixedguard` | 2026-10-05 | 600 s window with setpoint/target history, 3 scenarios per cell, guard per disturbance type plus a per-scenario cap, 3 candidates | 3 x 3 | 0 | $0.32 | 533.4 / 478.7 / 1583.0 (seed) |
-| `window600_guardschedule` | 2026-10-05 | Guard loose in gens 1-2, tighter in 3-4 and from 5; failure traces of non-promoted candidates in the prompt | 4 x 3 | 1 | $0.42 | 231.5 / 247.5 / 1339.3 |
-| `window600_onechange` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion; one targeted change per candidate | 3 x 3 (gens 5-7) | 0 | $0.11 | 231.5 / 247.5 / 1339.3 (seed) |
-| `window600_measured` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion (`--from`); lessons only from promoted candidates, measured record of every tried change in the prompt | 3 x 3 | 0 | $0.21 | 231.5 / 247.5 / 1339.3 (seed) |
-| `window600_high` | 2026-10-05 | Seeded with `window600_measured`'s champion, inheriting its 9 measured attempts; reasoning effort **high** (gens 1-2, then continued for gens 3-4) | 4 x 3 | 4 | $0.63 | **206.3 / 214.9** / 1199.2 |
+| `window50_default` | 2026-10-01 | First run: 50 s window, 1 scenario per cell, per-scenario guard | 2 x 4 | 2 | $0.31 | 296.5 / 282.7 / 1203.3 |
+| `window50_strictguard_run1` | 2026-10-01 | Three independent runs from the seed, same setup | 2 x 4 | 0 | $0.27 | 498.3 / 447.0 / 1470.5 (seed) |
+| `window50_strictguard_run2` | 2026-10-01 | | 2 x 4 | 0 | $0.30 | 498.3 / 447.0 / 1470.5 (seed) |
+| `window50_strictguard_run3` | 2026-10-01 | | 2 x 4 | 0 | $0.26 | 498.3 / 447.0 / 1470.5 (seed) |
+| `window50_run1` | 2026-10-01 | Looser guard (per scenario, relative to the battery average) | 4 x 4 | 1 | $0.53 | 352.0 / 290.5 / 1257.3 |
+| `window50_run2` | 2026-10-01 | | 4 x 4 | 2 | $0.35 | 291.5 / 291.6 / 1230.9 |
+| `window50_run3` | 2026-10-01 | | 4 x 4 | 1 | $0.40 | 417.3 / 396.8 / 1345.3 |
+| `window600_fixedguard` | 2026-10-05 | 600 s window with setpoint/target history, 3 scenarios per cell, guard per disturbance type plus a per-scenario cap, 3 candidates | 3 x 3 | 0 | $0.32 | 498.3 / 447.0 / 1470.5 (seed) |
+| `window600_guardschedule` | 2026-10-05 | Guard loose in gens 1-2, tighter in 3-4 and from 5; failure traces of non-promoted candidates in the prompt | 4 x 3 | 1 | $0.42 | 278.9 / 289.7 / 1349.3 |
+| `window600_onechange` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion; one targeted change per candidate | 3 x 3 (gens 5-7) | 0 | $0.11 | 278.9 / 289.7 / 1349.3 (seed) |
+| `window600_measured` | 2026-10-05 | Seeded with `window600_guardschedule`'s champion (`--from`); lessons only from promoted candidates, measured record of every tried change in the prompt | 3 x 3 | 0 | $0.21 | 278.9 / 289.7 / 1349.3 (seed) |
+| `window600_high` | 2026-10-05 | Seeded with `window600_measured`'s champion, inheriting its 9 measured attempts; reasoning effort **high** (gens 1-2, then continued for gens 3-4) | 4 x 3 | 4 | $0.63 | **265.4 / 273.9** / 1223.0 |
 
-Baselines on the same batteries (with the safety wrapper): fixed recipe 533.4 / 478.7 / 1583.0, untuned
-MPC 203.7 / 193.8 / 1123.6, MPC tuned on the development battery (`tune_mpc.py`) 133.9 / 157.2 / 732.3,
-tuned MPC with known current disturbance 118.4 / 144.0 / 701.6.
+Baselines with the current test bed (safety wrapper, retuned PI loops): fixed recipe 498.3 / 447.0 /
+1470.5, untuned MPC 202.0 / 216.6 / 1081.5, MPC tuned on the development battery (`tune_mpc.py`) 158.8 /
+170.4 / 770.2, tuned MPC with known current disturbance 140.6 / 163.1 / 738.9.
 
 All runs above are exploratory: the loop changed between them and the batteries were looked at after
 each one. The confirmatory runs follow [PROTOCOL.md](PROTOCOL.md) (`protocol_run1` ... `protocol_run8`) and
@@ -43,8 +46,8 @@ are evaluated on the sealed test battery.
 
 ## Notes
 
-- `window600_high` champion after each promotion (dev / held-out; beyond only computed at the end of each
-  invocation): gen 1 230.3 / 226.2, gen 2 227.4 / 229.2 (beyond 1181.4), gen 3 212.4 / 221.0, gen 4 206.3 /
+- `window600_high` champion after each promotion, with the PI loops of the time (dev / held-out; beyond
+  only computed at the end of each invocation): gen 1 230.3 / 226.2, gen 2 227.4 / 229.2 (beyond 1181.4), gen 3 212.4 / 221.0, gen 4 206.3 /
   214.9 (beyond 1199.2).
 - The window-50 runs' logged scores (in their `trials.jsonl` and `final_report.md`) are on the
   old battery (50 s window, one scenario per cell) and are not comparable with the 600 s runs;

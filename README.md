@@ -219,6 +219,8 @@ controller with known current disturbance as a reference (not an upper bound).
 ```bash
 python benchmark_coordination.py [per_cell]   # fixed recipe vs untuned / tuned / known-disturbance MPC, no API calls
 python tune_mpc.py [budget]                   # tune the MPC on the dev battery (default 40 configurations), no API calls
+python tune_pi_coordination.py [ms_bound]     # PI loop tuning: lowest load IAE with Ms <= bound (default 1.6), no API calls
+python rescore_champions_coordination.py      # every run's champion with the current test bed, no API calls
 python stress_test_coordination.py [--runs RUN ...]   # noise, plant mismatch, analyser delay, telemetry faults, no API calls
 python evaluate_sealed_test.py --unseal "REASON" --runs RUN ... --baselines   # the sealed test battery, once, logged
 python analyze_protocol.py --scores CSV --runs RUN ...   # pre-registered statistics (--dry-run on validation batteries)
@@ -257,27 +259,39 @@ next to the baselines on identical scenarios.
 ### Results
 
 All scores on the same batteries (42 development / 42 held-out development / 36 beyond the
-development range, 600 s window); lower is better. The beyond-range battery is never shown to
-the LLM.
+development range, 600 s window) with the current test bed, including the retuned PI loops (see
+below); lower is better. The beyond-range battery is never shown to the LLM. The LLM champions were
+evolved against the previous PI loops and are re-scored here.
 
 | Controller | Development | Held-out | Beyond range |
 |---|---|---|---|
-| Fixed recipe (PID loops only; the seed) | 533.4 | 478.7 | 1,583.0 |
-| LLM champion, `window50_run2` (50 s window) | 226.3 | 242.2 | 1,276.9 |
-| LLM champion, `window600_guardschedule` (600 s, reasoning effort low) | 231.5 | 247.5 | 1,339.3 |
-| LLM champion, `window600_high` (600 s, reasoning effort high) | 206.3 | 214.9 | 1,199.2 |
-| MPC, untuned (original) | 203.7 | 193.8 | 1,123.6 |
-| **MPC, tuned on the development battery** | **133.9** | **157.2** | **732.3** |
-| MPC, tuned, known current disturbance | 118.4 | 144.0 | 701.6 |
+| Fixed recipe (PI loops only; the seed) | 498.3 | 447.0 | 1,470.5 |
+| LLM champion, `window50_run2` (50 s window) | 291.5 | 291.6 | 1,230.9 |
+| LLM champion, `window600_guardschedule` (600 s, reasoning effort low) | 278.9 | 289.7 | 1,349.3 |
+| LLM champion, `window600_high` (600 s, reasoning effort high) | 265.4 | 273.9 | 1,223.0 |
+| MPC, untuned (original) | 202.0 | 216.6 | 1,081.5 |
+| **MPC, tuned on the development battery** | **158.8** | **170.4** | **770.2** |
+| MPC, tuned, known current disturbance | 140.6 | 163.1 | 738.9 |
 
-The best beyond-range score among the LLM champions is still `window50_run1`'s 1,189.8 (its
-development score is 255.6). The runs index has every run.
+The best beyond-range score among the LLM champions is `window50_default`'s 1,203.3. The runs index
+has every run.
 
 The earlier impression that the LLM champion nearly matched MPC came from an untuned baseline.
 Its cost penalised the squared size of a constraint violation while the score counts every second
 of it, so a 1 mm violation was nearly free. `tune_mpc.py` gives the MPC a score-aligned cost and a
 tuning budget comparable to the LLM's: 40 configurations on the development battery, against about
 40 candidates in the champion's lineage. The tuned MPC is clearly better on all three batteries.
+
+The PI level loops were also retuned. The gains used until then (Kp 40 V/m, Ti 133 s on both loops)
+came from the leak test bed and had a maximum sensitivity of 2.98 and 40 % overshoot.
+`tune_pi_coordination.py` picks, per loop, the lowest load-disturbance IAE subject to Ms <= 1.6:
+- h1 loop: Kp 15, Ti 133 s;
+- h2 loop: Kp 40, Ti 200 s;
+- result: Ms 1.56, overshoot 11 % / 9 %.
+
+The real plant's regulatory loops can be assumed to be well tuned. With the robust loops the
+existing LLM champions lost 13-96 points on dev (`window600_high`: 59), because they had partly fitted the old,
+aggressive dynamics. The MPC, re-tuned, lost less (133.9 to 158.8), and the fixed recipe improved.
 
 ### Protocol
 
@@ -296,15 +310,15 @@ Every supervisor now runs behind a fixed safety wrapper in the test bed: NaN and
 [results/coordination/stress_tests.md](results/coordination/stress_tests.md) shows the
 controllers under sensor noise, plant mismatch, analyser delay and telemetry faults. These results
 are exploratory, on the validation batteries:
-- **Sensor noise.** The tuned MPC is fragile: +45 % at 1 mm and +151 % at 3 mm, because of its
-  fast disturbance estimator. The LLM champion changes by -1 % and +6 %.
+- **Sensor noise.** The tuned MPC is fragile: +47 % at 1 mm and +156 % at 3 mm, because of its
+  fast disturbance estimator. The LLM champion changes by -2 % and +3 %.
 - **Plant mismatch.** With every plant parameter off by up to 10 %, all model-based controllers
-  degrade by 120-470 %. None of them has integral action on the production error, so they believe
-  production is on target when it is not.
+  degrade by 74-409 %, against 19-102 % for the fixed recipe. None of them has integral action on the
+  production error, so they believe production is on target when it is not.
 - **Analyser delay.** Only the LLM champion reads the production field, so only it is affected
-  by a delayed or frozen analyser (+11-14 %).
+  by a delayed or frozen analyser (+3-4 %).
 - **NaN on h3.** The wrapper holds the setpoints from the fault onwards. That is safe but crude:
-  +14-203 % for every controller.
+  +14-223 % for every controller.
 
 ### Why the window is 600 s
 
@@ -321,7 +335,8 @@ less in the score and in the regression guard.
 
 ### What moved the 600 s champion
 
-The 600 s runs changed one part of the training loop at a time (details in the runs index):
+The 600 s runs changed one part of the training loop at a time (details in the runs index; scores
+below are with the PI loops of the time):
 
 1. `window600_fixedguard`: no promotion. Every candidate that beat the seed's average (best 258
    against 533) was rejected by the regression guard, so the model kept seeing only the seed.
@@ -359,8 +374,9 @@ overfitting to the development battery.
   the model has been repeating near-identical proposals across trials rather
   than exploring new approaches — a likely local-optimum/search-diversity
   issue worth addressing before more trials.
-- Four-tank setpoint coordination: the exploratory runs are done, and the best LLM champion
-  (`window600_high`) scores 206.3 / 214.9 / 1,199.2 against the tuned MPC's 133.9 / 157.2 / 732.3.
+- Four-tank setpoint coordination: the exploratory runs are done. With the current test bed
+  (retuned PI loops) the best LLM champion (`window600_high`) scores 265.4 / 273.9 / 1,223.0 against
+  the tuned MPC's 158.8 / 170.4 / 770.2.
   The confirmatory runs (`protocol_run1`-`8`) under the registered
   [protocol](results/coordination/PROTOCOL.md) have not started. After them, the sealed test
   battery is evaluated once and analysed with `analyze_protocol.py`. The planned ablations (a prompt
