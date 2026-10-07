@@ -1,16 +1,16 @@
 # Four-Tank Setpoint-Coordination Supervisor Training Report
 
-Generated: 2026-10-05T20:32:21+00:00
+Generated: 2026-10-07T13:40:07+00:00
 
 ## Current champion vs baselines
 
 Source hash: `94c1e9b2765e`
 
-| Battery | LLM champion | Fixed recipe | MPC (estimated) | MPC (oracle) |
-|---|---|---|---|---|
-| Development (drives promotion) | 206.3 | 533.4 | 203.7 | 192.9 |
-| Held-out development | 214.9 | 478.7 | 193.8 | 191.1 |
-| Beyond development range (never shown to the LLM) | 1199.2 | 1583.0 | 1123.6 | 1110.9 |
+| Battery | LLM champion | Fixed recipe | MPC (untuned) | MPC (tuned) | MPC (known disturbance) |
+|---|---|---|---|---|---|
+| Development (drives promotion) | 206.3 | 533.4 | 203.7 | 133.9 | 118.4 |
+| Held-out development | 214.9 | 478.7 | 193.8 | 157.2 | 144.0 |
+| Beyond development range (never shown to the LLM) | 1199.2 | 1583.0 | 1123.6 | 732.3 | 701.6 |
 
 ## Trial history
 
