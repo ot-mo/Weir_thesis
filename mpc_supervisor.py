@@ -8,19 +8,38 @@ pump headroom, setpoint moves). Candidates are evaluated in parallel as numpy
 arrays: a coarse grid around the current setpoints, then a finer grid around
 the best one.
 
-Two variants:
+Variants:
 - MPCSupervisor(): nominal model plus an online disturbance estimate. After
   each decision the measured state is compared with the model's prediction,
   and the difference is folded into an additive inflow per tank (the
   bias-update idea used in industrial MPC). It does not know the true
-  disturbance.
-- MPCSupervisor(oracle_scenario=s): uses the true current plant parameters
-  and disturbance of scenario s (held constant over the horizon), an upper
-  bound in the spirit of PC-Gym's NMPC oracle.
+  disturbance. With no arguments it is the original, untuned controller
+  ("mpc_untuned" in the benchmark).
+- MPCSupervisor(**tuned_params()): the same controller with the parameters
+  tune_mpc.py found on the development battery ("mpc_tuned"), including the
+  choice of cost form.
+- MPCSupervisor(oracle_scenario=s, ...): uses the true current plant
+  parameters and disturbance of scenario s, held constant over the horizon
+  ("mpc_known_disturbance"). It is not an upper bound: knowing the current
+  disturbance does not make its model or its cost match the score, and it
+  lost to the estimating MPC on 30 of 120 scenarios with the quadratic cost.
+
+Cost forms:
+- "quadratic" (original): weighted squared production error and squared
+  constraint-violation size, averaged over the horizon. A 1 mm violation
+  costs almost nothing, while the score counts every second of it.
+- "score": the score's own terms over the horizon - absolute production
+  error (L), seconds with h2 within `margin` of the band edges, seconds with
+  an upper level within `margin` of its limit, the score's weights, and the
+  score's price on setpoint travel times `move_scale` - plus the pump
+  headroom term.
 
 Unlike the generated supervisors, this controller is stateful, so create a
 new instance per episode.
 """
+
+import json
+import os
 
 import numpy as np
 
@@ -40,11 +59,28 @@ FINE_STEPS = (-0.006, -0.003, 0.0, 0.003, 0.006)
 ESTIMATE_GAIN = 0.5
 
 
+TUNED_PARAMS_PATH = os.path.join("results", "coordination", "mpc_tuned_params.json")
+
+
+def tuned_params(path=TUNED_PARAMS_PATH):
+    """Parameters chosen by tune_mpc.py (keyword arguments for MPCSupervisor)."""
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)["params"]
+
+
 class MPCSupervisor:
-    def __init__(self, horizon_s=300, oracle_scenario=None, dt=1.0):
+    def __init__(self, horizon_s=300, oracle_scenario=None, dt=1.0, cost="quadratic",
+                 w_production=W_PRODUCTION, w_band=W_BAND, w_upper=W_UPPER, w_headroom=W_HEADROOM,
+                 w_move=W_MOVE, estimate_gain=ESTIMATE_GAIN, margin=0.0, move_scale=1.0):
+        if cost not in ("quadratic", "score"):
+            raise ValueError(cost)
         self.horizon = int(horizon_s / dt)
         self.dt = dt
         self.oracle_scenario = oracle_scenario
+        self.cost_form = cost
+        self.w_production, self.w_band, self.w_upper = w_production, w_band, w_upper
+        self.w_headroom, self.w_move, self.estimate_gain = w_headroom, w_move, estimate_gain
+        self.margin, self.move_scale = margin, move_scale
         self.p = C.plant_params()
         self.d_hat = np.zeros(4)           # estimated additive inflow per tank, m/s
         self.pending = None                # (predicted state, interval steps) from last decision
@@ -101,14 +137,22 @@ class MPCSupervisor:
         target = objectives["production_target"]
         band_lo, band_hi = objectives["h2_band"]
         limit = objectives["upper_level_limit"]
-        prod = ((traj["q"] - target) / target) ** 2
-        band = np.maximum(band_lo - traj["h2"], 0.0) ** 2 + np.maximum(traj["h2"] - band_hi, 0.0) ** 2
-        upper = np.maximum(traj["upper"] - limit, 0.0) ** 2
         head = sum(np.maximum(PUMP_HEADROOM[0] - traj[v], 0.0) ** 2 + np.maximum(traj[v] - PUMP_HEADROOM[1], 0.0) ** 2
                    for v in ("v1", "v2"))
         move = np.abs(sp - current).sum(axis=1)
-        return (W_PRODUCTION * prod.mean(axis=0) + W_BAND * band.mean(axis=0) + W_UPPER * upper.mean(axis=0)
-                + W_HEADROOM * head.mean(axis=0) + W_MOVE * move)
+        if self.cost_form == "score":
+            w = C.SCORE_WEIGHTS
+            m = self.margin
+            prod = np.abs(traj["q"] - target).sum(axis=0) * self.dt
+            band = ((traj["h2"] < band_lo + m) | (traj["h2"] > band_hi - m)).sum(axis=0) * self.dt
+            upper = (traj["upper"] > limit - m).sum(axis=0) * self.dt
+            return (w["production_iae_l"] * prod + w["band_violation_s"] * band + w["upper_violation_s"] * upper
+                    + self.w_headroom * head.mean(axis=0) + w["setpoint_tv_m"] * self.move_scale * move)
+        prod = ((traj["q"] - target) / target) ** 2
+        band = np.maximum(band_lo - traj["h2"], 0.0) ** 2 + np.maximum(traj["h2"] - band_hi, 0.0) ** 2
+        upper = np.maximum(traj["upper"] - limit, 0.0) ** 2
+        return (self.w_production * prod.mean(axis=0) + self.w_band * band.mean(axis=0)
+                + self.w_upper * upper.mean(axis=0) + self.w_headroom * head.mean(axis=0) + self.w_move * move)
 
     # -- supervisor interface -----------------------------------------------
     def __call__(self, telemetry_window, active_setpoints, objectives):
@@ -120,7 +164,7 @@ class MPCSupervisor:
         if self.oracle_scenario is None and self.pending is not None:
             predicted, steps = self.pending
             residual = (x0 - predicted) / (steps * self.dt)
-            self.d_hat = self.d_hat + ESTIMATE_GAIN * residual
+            self.d_hat = self.d_hat + self.estimate_gain * residual
 
         # PI integrator states reconstructed from the measured voltages:
         # output = Kp * e + Ki * integral (exact unless the loop is saturated).
