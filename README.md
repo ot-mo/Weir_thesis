@@ -212,7 +212,9 @@ cover the goal document's factors (disturbance kind × step/ramp/sine × inside 
 beyond the development range, three scenarios per cell); metrics are production
 IAE, constraint-violation time, setpoint total variation and recovery time.
 [mpc_supervisor.py](mpc_supervisor.py) is the model-based predictive baseline
-(online disturbance estimate, plus an oracle variant).
+(online disturbance estimate). It comes in three variants: the original untuned controller, the
+controller tuned on the development battery with a score-aligned cost (`tune_mpc.py`), and the tuned
+controller with known current disturbance as a reference (not an upper bound).
 
 ```bash
 python benchmark_coordination.py [per_cell]   # fixed recipe vs untuned / tuned / known-disturbance MPC, no API calls
@@ -356,8 +358,13 @@ overfitting to the development battery.
   the model has been repeating near-identical proposals across trials rather
   than exploring new approaches — a likely local-optimum/search-diversity
   issue worth addressing before more trials.
-- No RL/TD-MPC baseline yet; `benchmark_baselines.py`'s pattern (same
-  scenario battery, same scoring) is the intended extension point once one
-  exists, and eventually against the mining company's real controller and
-  data.
+- Four-tank setpoint coordination: the exploratory runs are done, and the best LLM champion
+  (`window600_high`) scores 206.3 / 214.9 / 1,199.2 against the tuned MPC's 133.9 / 157.2 / 732.3.
+  The confirmatory runs (`protocol_run1`-`8`) under the registered
+  [protocol](results/coordination/PROTOCOL.md) have not started. After them, the sealed test
+  battery is evaluated once and analysed with `analyze_protocol.py`. The planned ablations (a prompt
+  without plant equations, and best-of-N one-shot) are exploratory and not implemented yet.
+- No TD-MPC baseline yet. The comparison with Weir's TD-MPC needs access to their simulator and
+  controller, and a decision on whether plant details may be sent to the LLM provider. A
+  run-of-mine grinding-circuit model (le Roux et al. 2013) is the fallback test bed.
 
