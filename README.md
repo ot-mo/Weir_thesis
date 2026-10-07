@@ -311,7 +311,8 @@ are exploratory, on the validation batteries:
 The supervisor is stateless: it is reloaded for every call and its only memory is the
 telemetry window. With the earlier 50 s window it could not tell an oscillating disturbance
 (periods 200-500 s) from a ramp or a step, and it could not see its own setpoint changes or a
-production-target change settling (about 70 s to within 2 %, about 115 s to within 0.5 %). In
+production-target change settling (with the retuned PI loops, about 90-160 s to within 2 % and
+270-400 s to within 0.5 % for a 5-10 % target change). In
 the 50 s runs, champions read the target-change transient as a disturbance and chattered their
 setpoints. The 600 s window covers more than one oscillation period and the full settling time,
 and each sample now also carries the active setpoints and production target. Three scenarios

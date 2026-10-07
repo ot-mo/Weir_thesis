@@ -304,12 +304,14 @@ with outlet areas a1={p['a1']}, a2={p['a2']}, a3={p['a3']}, a4={p['a4']} m^2, no
 k1={p['k1']}, k2={p['k2']} m^3/(V*s), and d1, d2 = unmeasured extra in/outflow (0 nominally).
 Pumps are limited to {C.PUMP_LIMITS[0]:g}-{C.PUMP_LIMITS[1]:g} V. All four levels and both pump voltages are measured.
 
-Base layer: two PI level loops at a 1 s sample time (Kp={C.PID_KP:g} V/m, Ki={C.PID_KI:g} V/(m*s)), paired
+Base layer: two PI level loops at a 1 s sample time (h1 loop Kp={C.PI_GAINS['h1'][0]:g} V/m, Ki={C.PI_GAINS['h1'][1]:.4g} V/(m*s);
+h2 loop Kp={C.PI_GAINS['h2'][0]:g} V/m, Ki={C.PI_GAINS['h2'][1]:.4g} V/(m*s)), paired
 off-diagonally: the h1 loop drives PUMP 2 and the h2 loop drives PUMP 1. They track your
 setpoints for h1 and h2; you never drive the pumps directly. After a setpoint change the loops
-need about 1.5-2 minutes to settle (production within 2% after ~70 s, within 0.5% after ~115 s),
-and meanwhile the pump voltages overshoot their new steady values by about 1-1.5 V: levels,
-slopes and voltages measured during that transient reflect the setpoint change, not a disturbance.
+need several minutes to settle (for a 5-10% production-target change: production within 2% after
+~90-160 s, within 0.5% after ~270-400 s), and meanwhile the pump voltages deviate from their new
+steady values by up to about 1-2 V: levels, slopes and voltages measured during that transient
+reflect the setpoint change, not a disturbance.
 
 Production: Q = a1*sqrt(2g*h1) + a2*sqrt(2g*h2), reported in L/s. With the loops holding h1 and h2
 at their setpoints, Q at steady state depends only on the two setpoints, while the pump voltages

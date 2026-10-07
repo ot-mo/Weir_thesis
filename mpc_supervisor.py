@@ -112,10 +112,12 @@ class MPCSupervisor:
         traj = {"q": np.empty((steps, n)), "h2": np.empty((steps, n)), "upper": np.empty((steps, n)),
                 "v1": np.empty((steps, n)), "v2": np.empty((steps, n))}
         lo, hi = C.PUMP_LIMITS
+        kp = np.array([C.PI_GAINS["h1"][0], C.PI_GAINS["h2"][0]])
+        ki = np.array([C.PI_GAINS["h1"][1], C.PI_GAINS["h2"][1]])
         for k in range(steps):
             e = sp - x[:, :2]
             integ = integ + e * self.dt
-            out = C.PID_KP * e + C.PID_KI * integ
+            out = kp * e + ki * integ
             sat = (out > hi) | (out < lo)
             integ = np.where(sat, integ - e * self.dt, integ)    # same anti-windup back-off as PID.py
             out = np.clip(out, lo, hi)
@@ -169,7 +171,8 @@ class MPCSupervisor:
         # PI integrator states reconstructed from the measured voltages:
         # output = Kp * e + Ki * integral (exact unless the loop is saturated).
         e = current - x0[:2]
-        integ0 = np.array([(s["v2"] - C.PID_KP * e[0]) / C.PID_KI, (s["v1"] - C.PID_KP * e[1]) / C.PID_KI])
+        (kp1, ki1), (kp2, ki2) = C.PI_GAINS["h1"], C.PI_GAINS["h2"]
+        integ0 = np.array([(s["v2"] - kp1 * e[0]) / ki1, (s["v1"] - kp2 * e[1]) / ki2])
 
         p, extra = self._params_now()
         lo, hi = objectives["setpoint_limits"]

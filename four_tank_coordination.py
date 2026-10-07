@@ -45,7 +45,17 @@ UPPER_LEVEL_LIMIT = 0.75        # circulating-load analog for h3 and h4, m
 SAFETY_BOUNDS = (0.02, 1.5)     # lower-tank levels, m
 SETPOINT_LIMITS = (0.05, 0.48)
 PUMP_LIMITS = (1.0, 12.0)
-PID_KP, PID_KI = 40.0, 0.3      # cross-paired PI loops, as in pcgym_four_tank.py
+# Cross-paired PI loops (the h1 loop drives pump 2, the h2 loop drives pump 1),
+# (Kp in V/m, Ki in V/(m*s)) per loop. Tuned with tune_pi_coordination.py for the
+# lowest load-disturbance IAE subject to a maximum sensitivity of the coupled
+# loops Ms <= 1.6 at the nominal operating point: h1 loop Kp 15, Ti 133 s; h2
+# loop Kp 40, Ti 200 s; Ms 1.56, setpoint-step overshoot 11 % / 9 %. The gains
+# used before (Kp 40, Ti 133 s on both loops, copied from the leak test bed, where
+# they were picked for leak-fault IAE alone) had Ms 2.98 and 40 % / 28 % overshoot;
+# the real plant's regulatory loops can be assumed to be well tuned. With
+# gamma1 = gamma2 = 0.2 the plant has a right-half-plane zero at 0.022 1/s,
+# which limits how fast any tuning can settle.
+PI_GAINS = {"h1": (15.0, 15.0 / 133.0), "h2": (40.0, 40.0 / 200.0)}
 RECOVERY_TOLERANCE = 0.02       # settled once |Q - Q*| <= 2% of Q* for good
 
 # Safety wrapper: fixed, human-written checks between every supervisor and the
@@ -242,11 +252,11 @@ def _apply_disturbances(model, p, scenario, t):
     return d1, d2
 
 
-def _make_pid(setpoint, steady_voltage, dt):
-    pid = PIDController(Kp=PID_KP, Ki=PID_KI, Kd=0.0, setpoint=setpoint, output_limits=PUMP_LIMITS)
+def _make_pid(setpoint, steady_voltage, dt, kp, ki):
+    pid = PIDController(Kp=kp, Ki=ki, Kd=0.0, setpoint=setpoint, output_limits=PUMP_LIMITS)
     # Start in steady operation: integral pre-loaded so the first output is
     # the steady-state voltage (PID.py returns 0 V on its very first call).
-    pid._integral = steady_voltage / PID_KI
+    pid._integral = steady_voltage / ki
     pid._last_time = -dt
     return pid
 
@@ -329,8 +339,8 @@ def run_episode(supervisor_fn: Callable, scenario: CoordinationScenario) -> dict
     ss = steady_state(sp["h1"], sp["h2"], p=p)
     x = np.array([sp["h1"], sp["h2"], ss["h3"], ss["h4"]], dtype=float)
     # Cross pairing: the h1 loop drives pump 2, the h2 loop drives pump 1.
-    loop_h1 = _make_pid(sp["h1"], ss["v2"], scenario.dt)
-    loop_h2 = _make_pid(sp["h2"], ss["v1"], scenario.dt)
+    loop_h1 = _make_pid(sp["h1"], ss["v2"], scenario.dt, *PI_GAINS["h1"])
+    loop_h2 = _make_pid(sp["h2"], ss["v1"], scenario.dt, *PI_GAINS["h2"])
     target = NOMINAL_PRODUCTION
     changes = sorted(scenario.target_changes)
 
