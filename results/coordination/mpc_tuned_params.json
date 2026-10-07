@@ -1,0 +1,22 @@
+{
+ "params": {
+  "cost": "score",
+  "horizon_s": 150,
+  "estimate_gain": 0.712,
+  "w_headroom": 8.601,
+  "margin": 0.0056,
+  "move_scale": 0.669
+ },
+ "config": 2,
+ "dev_score": 133.898,
+ "untuned_dev_score": 203.738,
+ "budget": 40,
+ "seed": 2026,
+ "battery": {
+  "range": "dev",
+  "per_cell": 3,
+  "seed": 1
+ },
+ "tuned": "2026-10-07T13:05:40+00:00",
+ "git_commit": "2ca514d"
+}
