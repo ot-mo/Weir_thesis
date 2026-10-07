@@ -1,15 +1,15 @@
 {
  "params": {
   "cost": "score",
-  "horizon_s": 150,
-  "estimate_gain": 0.712,
-  "w_headroom": 8.601,
-  "margin": 0.0056,
-  "move_scale": 0.669
+  "horizon_s": 200,
+  "estimate_gain": 0.774,
+  "w_headroom": 27.39,
+  "margin": 0.0128,
+  "move_scale": 3.78
  },
- "config": 2,
- "dev_score": 133.898,
- "untuned_dev_score": 203.738,
+ "config": 31,
+ "dev_score": 158.782,
+ "untuned_dev_score": 201.951,
  "budget": 40,
  "seed": 2026,
  "battery": {
@@ -17,6 +17,6 @@
   "per_cell": 3,
   "seed": 1
  },
- "tuned": "2026-10-07T13:05:40+00:00",
- "git_commit": "2ca514d"
+ "tuned": "2026-10-07T15:47:17+00:00",
+ "git_commit": "cd35652"
 }
