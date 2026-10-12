@@ -234,3 +234,6 @@ Thesis_latex/*.fdb_latexmk
 Thesis_latex/*.synctex.gz
 Thesis_latex/main.pdf
 Thesis_latex/thesis.pdf
+
+# Company repo (SentianAI/LLM-Synthesized-Supervisory-Control), cloned here as its own git repo
+LLM-Synthesized-Supervisory-Control/
