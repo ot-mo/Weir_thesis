@@ -5,17 +5,21 @@ faults. The research questions instead ask how well a generated supervisor
 \emph{coordinates setpoints} under disturbances compared with a model-based
 predictive controller, inside and beyond the development range. This chapter
 rehearses that comparison on the quadruple-tank process before the industrial
-study. All scores in the chapter are evaluated on the same three batteries,
-so every number is comparable; lower is better.
+study. The runs reported here are \emph{exploratory}: the training loop was
+changed between them, and the validation batteries were looked at after each
+run. They led to the pre-registered protocol of
+Section~\ref{sec:protocol}, whose confirmatory runs are reported separately.
+Unless stated otherwise, every score in this chapter is evaluated with the
+current test bed on the same three batteries, so the numbers are comparable;
+lower is better.
 
 \section{Test bed}
 \label{sec:coord-testbed}
 \paragraph{Process and objectives.} The plant is the quadruple-tank process
-of Section~\ref{sec:four} with the same cross-paired PI loops
-($K_p = 40$, $K_i = 0.3$), which hold the levels $h_1$ and $h_2$ of the
-lower tanks at their setpoints. Table~\ref{tab:coord-analog} maps the
-grinding-circuit objectives onto the process. The product is the production
-rate $Q$, the summed outflow of the two lower tanks, which is
+of Section~\ref{sec:four}. Two cross-paired PI loops hold the levels $h_1$
+and $h_2$ of the lower tanks at their setpoints. Table~\ref{tab:coord-analog}
+maps the grinding-circuit objectives onto the process. The product is the
+production rate $Q$, the summed outflow of the two lower tanks, which is
 16.4~L/s at the nominal setpoints $h_1 = 0.30$~m and $h_2 = 0.35$~m. The
 level $h_2$ must stay inside the band 0.25--0.45~m, and the upper levels
 $h_3$ and $h_4$ must stay below 0.75~m. The supervisor moves only the two
@@ -43,23 +47,34 @@ constraints satisfied as disturbances move the operating point.
   \end{tabular}
 \end{table}
 
+\paragraph{PI loops.} The leak test beds used $K_p = 40$~V/m and
+$T_i = 133$~s on both loops. On this test bed those gains gave a maximum
+sensitivity of $M_s = 2.98$ and about 40\% overshoot, while the loops of a
+real plant can be assumed to be well tuned. The loops were therefore retuned
+by a search over $K_p$ and $T_i$ for the lowest integrated error after a load
+disturbance subject to $M_s \le 1.6$. The result, $K_p = 15$~V/m and
+$T_i = 133$~s on the $h_1$ loop and $K_p = 40$~V/m and $T_i = 200$~s on the
+$h_2$ loop, has $M_s = 1.56$. All runs in this chapter were \emph{trained}
+with the original loops; their champions are re-scored with the retuned
+ones. Section~\ref{sec:coord-results} discusses what this costs them.
+
 \paragraph{Scenarios.} Each 1\,200~s episode starts in steady operation, as
 a running plant would, and is integrated with the explicit Euler method at a
 1~s step. A disturbance of one of three kinds (feed, pump or split, as in
-Table~\ref{tab:coord-analog}) or a combination of two of them at three
-quarters of the amplitude starts between 150 and 300~s, as a step, a ramp
+Table~\ref{tab:coord-analog}), or a combination of two of them at three
+quarters of the amplitude, starts between 150 and 300~s, as a step, a ramp
 over 200--400~s or a sine with a period of 200--500~s. The development
 amplitudes were calibrated on the steady-state model so that some setpoint
 pair still meets the production target with every constraint satisfied,
-while the upper part of each range breaks the fixed operating recipe; the
+while the upper part of each range breaks the fixed operating recipe. The
 amplitudes beyond the development range start past that edge of
 solvability, so some constraint violation there cannot be avoided. Two
 further nominal scenarios step the production target up or down by 5--10\%
-and back. With three scenarios per cell, the development battery has 42
-scenarios (12 cells of disturbance kind and pattern, plus the nominal
-scenarios), the held-out battery has 42 scenarios of the same types with
-other seeds, and the battery beyond the development range has 36. The
-beyond-range battery is never shown to the LLM.
+and back after 400--550~s. With three scenarios per cell, the development
+battery has 42 scenarios (12 cells of disturbance kind and pattern, plus the
+nominal scenarios). The held-out battery has 42 scenarios of the same types
+drawn with another seed, and the battery beyond the development range has 36.
+The roles of the batteries are described in Section~\ref{sec:batteries}.
 
 \paragraph{Supervisor interface.} The supervisor is called every 10~s as
 \begin{center}
@@ -74,8 +89,12 @@ the setpoint limits. The supervisor is stateless, as before, so the window is
 its only memory. An earlier 50~s window was too short for this: the
 supervisor could not tell a sine disturbance from a ramp or a step, and it
 could not see its own setpoint changes or a target change settling (about
-70~s to within 2\%). The first generated supervisors read that transient as
-a disturbance and chattered their setpoints.
+70~s to within 2\% with the original loops). The first generated supervisors
+read that transient as a disturbance and chattered their setpoints. Every
+controller, generated or not, passes through the safety wrapper of
+Section~\ref{sec:wrapper}, with a rate limit of 0.12~m per call. When the limit was set, the largest
+step any controller had taken on the three batteries was 0.106~m (the
+untuned MPC), so the limit is a safety net, not a performance limit.
 
 \paragraph{Score.} For a scenario $s$,
 \begin{equation}
@@ -87,12 +106,14 @@ where $\mathrm{IAE}_{Q,s}$ is the integrated absolute production error in
 litres, $B_s$ and $U_s$ the number of seconds with $h_2$ outside its band and
 with an upper level above its limit, $V_s$ the number of seconds outside the
 safety bounds of the lower levels, $\mathrm{TV}_s$ the total variation of the
-two setpoints in metres and $E_s$ the number of exceptions and timeouts. The
-weights are provisional: one litre off target costs as much as half a second
-of constraint violation or a centimetre of setpoint travel. The recovery
-time, the time until production settles within 2\% of the target after an
-event, is reported but not scored. No controller in this chapter violated
-the safety bounds or raised an exception.
+two setpoints in metres and $E_s$ the number of exceptions and timeouts. One
+litre off target costs as much as half a second of constraint violation or a
+centimetre of setpoint travel. The weights were chosen without the plant's
+operators and are frozen in the protocol. The recovery time, the time until
+production settles within 2\% of the target after an event for good, is
+reported but not scored. No controller in this chapter violated the safety
+bounds, raised an exception or triggered the safety wrapper in nominal
+conditions.
 
 \section{Baselines}
 \label{sec:coord-baselines}
@@ -101,41 +122,59 @@ recipe: when the production target changes, it scales both setpoints with
 the nominal square-root relation $Q \propto \sqrt{h}$, and it ignores
 disturbances. This is what the PI loops achieve on their own.
 
-\paragraph{MPC.} The model-based predictive baseline simulates candidate
-setpoint pairs over a 300~s horizon with an internal model of the plant and
-the PI loops, and applies the pair with the lowest predicted cost: squared
-relative production error, squared band and upper-limit violations, pump
-voltages outside 1.5--11.5~V, and setpoint moves. The candidates are a
-coarse $9 \times 9$ grid of moves around the current setpoints and then a
-finer $5 \times 5$ grid around the best one. The disturbance is estimated
-online as an additive inflow per tank, corrected after each decision by half
-the difference between the measured and the predicted state, which is the
-bias update common in industrial MPC \cite{qin2003}. The \emph{oracle MPC}
-instead uses the true plant parameters and disturbance at each decision,
-held constant over the horizon, and bounds what a predictive controller with
-this horizon and cost can reach. Unlike the generated supervisors, both are
-stateful. They stand in for the model-based predictive benchmark of the
-research questions; they are not the TD-MPC controller used at Weir.
+\paragraph{Model predictive controller.} The model-based predictive baseline
+simulates candidate setpoint pairs over a prediction horizon with an
+internal model of the plant and the PI loops, and applies the pair with the
+lowest predicted cost. The candidates are a coarse $9 \times 9$ grid of moves
+around the current setpoints and then a finer $5 \times 5$ grid around the
+best one; each pair is held over the horizon. The disturbance is estimated
+online as an additive inflow per tank: after each decision, the difference
+between the measured and the predicted state is folded into the estimate
+with a gain, the bias update common in industrial MPC \cite{qin2003}. Unlike
+the generated supervisors, the MPC is stateful. It stands in for the
+model-based predictive benchmark of the research questions; it is not the
+TD-MPC controller used at Weir. Three variants are evaluated.
+\begin{description}
+\item[Untuned MPC] The original controller, written for this thesis before
+  any comparison: a 300~s horizon, a quadratic cost on the relative
+  production error, the size of band and upper-limit violations, pump
+  voltages outside 1.5--11.5~V and setpoint moves, and estimator gain 0.5.
+\item[Tuned MPC] The LLM's supervisor is optimised directly against the
+  score on the development battery; the best champion comes from a lineage
+  of about 40 candidates. To give the MPC a comparable chance, 40
+  configurations were drawn by a seeded random search on the same battery
+  (configuration 0 being the untuned MPC), and the best was kept. The
+  search covered the cost form, the horizon, the estimator gain and the
+  cost weights. The winner uses a cost made of the score's own terms over the
+  horizon (absolute production error, seconds within a margin of 0.0128~m of
+  the constraints, and the score's price on setpoint travel multiplied by
+  3.78), a pump-headroom weight of 27.4, a 200~s horizon and estimator gain
+  0.774. Its development score is 158.8, against 202.0 for the untuned MPC.
+  The held-out and beyond batteries were not used in the tuning. This is the
+  primary comparator of the protocol.
+\item[Tuned MPC with known disturbance] The tuned MPC given the true current
+  plant parameters and disturbance at every decision, held constant over the
+  horizon. It is a reference, not a lower bound on the score: its model and
+  cost still differ from the score, and it loses to the tuned MPC on 19 of
+  the 120 validation scenarios.
+\end{description}
 
 \section{Changes to the training loop}
 \label{sec:coord-loop}
-The loop of Chapter~\ref{ch:method} was reused with the score
-\eqref{eq:coord-score}, the same security sandbox, deepseek-flash and $K = 3$
-candidates per generation. Four changes were made, each after a run that stalled:
+The coordination runs used the training loop of
+Section~\ref{sec:training-loop}, with the score \eqref{eq:coord-score}, the
+security sandbox, deepseek-flash and three candidates per generation. Four
+parts of the loop described there were added during these runs, each after a
+run that stalled:
 \begin{itemize}
 \item \emph{Regression guard by disturbance type, with a schedule.} The
-  per-scenario guard of Section~\ref{sec:scoring} rejected almost every
-  candidate; in the first 600~s run every candidate that beat the seed (the
-  best scored 258 against 533) was rejected, so the prompt kept showing only
-  the seed. Now the mean score of each disturbance type may get worse by at
-  most the larger of 10 points and a relative tolerance, and no single
-  scenario by more than the larger of an absolute and a relative cap. The
-  tolerances are loose in generations 1--2 (25\%, cap 300 points or
-  150\%), tighter in generations 3--4 (15\%, cap 200 points or 100\%) and
-  tightest from generation 5 (10\%, cap 100 points or 50\%), and the battery
-  average must always improve. A candidate that is much better overall but
-  worse on one scenario can thus be promoted early, and its weak scenario
-  then appears in the next prompt's decision traces.
+  per-scenario guard of the leak test beds rejected almost every candidate.
+  In the first 600~s run, every candidate that beat the seed (the best scored
+  258 against 533 with the original loops) was rejected, so the prompt kept
+  showing only the seed. With the guard by disturbance type and a schedule
+  that is loose in the first generations, a candidate that is much better
+  overall but worse on one scenario can be promoted early, and its weak
+  scenario then appears in the next prompt's decision traces.
 \item \emph{Failure traces of rejected candidates.} The prompt also shows,
   for up to two non-promoted candidates of the previous generation, the
   decision trace of the scenario each lost most on.
@@ -143,30 +182,30 @@ candidates per generation. Four changes were made, each after a run that stalled
   candidates rewrote the supervisor, keeping 16--65\% of the champion's lines,
   and each fixed one scenario while breaking others. With it they kept
   83--99\%.
-\item \emph{A measured record instead of unverified lessons.} The lessons of
-  Chapter~\ref{ch:method} are written by the LLM before its candidate is
-  scored. In one run, all nine candidates made the same change (averaging the
-  load estimate), which damped the response to sine disturbances and broke
-  the response to steps, and the lessons saved from them recommended that
-  change again. Lessons are now kept only from promoted candidates. Every
-  other candidate is recorded by the trainer as one measured line (its
-  change, its average against the champion, and the scenarios it gained and
-  lost most on), and the prompt lists all of them for the run. A run seeded
-  with another run's champion inherits that record.
+\item \emph{A measured record instead of unverified lessons.} The lessons are
+  written by the LLM before its candidate is scored. In one run, all nine
+  candidates made the same change (averaging the load estimate), which damped
+  the response to sine disturbances and broke the response to steps, and the
+  lessons saved from them recommended that change again. Lessons are now kept
+  only from promoted candidates, and every other candidate is recorded as a
+  measured line in the prompt.
 \end{itemize}
 
 \section{Runs}
 \label{sec:coord-runs}
-Table~\ref{tab:coord-runs} lists every run. Each row changed one part of the
-loop from the row above. The first runs used the 50~s window and one
-scenario per cell; their champions are re-scored on the current batteries.
+Table~\ref{tab:coord-runs} lists every exploratory run. Each row changed one
+part of the loop from the row above. The first runs used the 50~s window and
+one scenario per cell. All champions are re-scored with the current test bed
+(600~s window, three scenarios per cell, retuned PI loops).
 
 \begin{table}[tb]
   \centering
-  \caption{Coordination runs, in order. Gen.\ $\times$ $K$ is the number of
-    generations and candidates per generation; cost is the estimated
-    DeepSeek cost in US dollars. Scores are the champion's on the current
-    batteries. All runs used low reasoning effort except the last.}
+  \caption{Exploratory coordination runs, in order. Gen.\ $\times$ $K$ is the
+    number of generations and candidates per generation, Prom.\ the number of
+    promotions, and cost the estimated DeepSeek cost in US dollars. Scores
+    are the champion's, re-scored with the current test bed. A run without
+    promotions ends with its seed. All runs used low reasoning effort except
+    the last.}
   \label{tab:coord-runs}
   \small\setlength{\tabcolsep}{4pt}
   \begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.33\textwidth}ccrrrr@{}}
@@ -174,108 +213,130 @@ scenario per cell; their champions are re-scored on the current batteries.
     Run (change from the row above) & Gen.\ $\times$ $K$ & Prom. & Cost
       & Dev. & Held-out & Beyond \\
     \midrule
-    50~s window, per-scenario guard            & $2 \times 4$ & 2 & 0.31 & 252.1 & 241.3 & 1\,261 \\
-    Same setup, three more runs                & $2 \times 4$ & 0 & 0.83 & 533.4 & 478.7 & 1\,583 \\
-    Looser guard, run 1                        & $4 \times 4$ & 1 & 0.53 & 255.6 & 243.2 & 1\,190 \\
-    \phantom{Looser guard,} run 2              & $4 \times 4$ & 2 & 0.35 & 226.3 & 242.2 & 1\,277 \\
-    \phantom{Looser guard,} run 3              & $4 \times 4$ & 1 & 0.40 & 404.7 & 358.2 & 1\,390 \\
+    50~s window, per-scenario guard            & $2 \times 4$ & 2 & 0.31 & 296.5 & 282.7 & 1\,203 \\
+    Same setup, three more runs                & $2 \times 4$ & 0 & 0.83 & 498.3 & 447.0 & 1\,471 \\
+    Looser guard, run 1                        & $4 \times 4$ & 1 & 0.53 & 352.0 & 290.5 & 1\,257 \\
+    \phantom{Looser guard,} run 2              & $4 \times 4$ & 2 & 0.35 & 291.5 & 291.6 & 1\,231 \\
+    \phantom{Looser guard,} run 3              & $4 \times 4$ & 1 & 0.40 & 417.3 & 396.8 & 1\,345 \\
     600~s window, 3 scenarios per cell, guard by type
-                                               & $3 \times 3$ & 0 & 0.32 & 533.4 & 478.7 & 1\,583 \\
-    Guard schedule, failure traces             & $4 \times 3$ & 1 & 0.42 & 231.5 & 247.5 & 1\,339 \\
-    One targeted change per candidate          & $3 \times 3$ & 0 & 0.11 & 231.5 & 247.5 & 1\,339 \\
-    Measured record, lessons only when promoted & $3 \times 3$ & 0 & 0.21 & 231.5 & 247.5 & 1\,339 \\
-    High reasoning effort, inherited record    & $4 \times 3$ & 4 & 0.63 & 206.3 & 214.9 & 1\,199 \\
+                                               & $3 \times 3$ & 0 & 0.32 & 498.3 & 447.0 & 1\,471 \\
+    Guard schedule, failure traces             & $4 \times 3$ & 1 & 0.42 & 278.9 & 289.7 & 1\,349 \\
+    One targeted change per candidate          & $3 \times 3$ & 0 & 0.11 & 278.9 & 289.7 & 1\,349 \\
+    Measured record, lessons only when promoted & $3 \times 3$ & 0 & 0.21 & 278.9 & 289.7 & 1\,349 \\
+    High reasoning effort, inherited record    & $4 \times 3$ & 4 & 0.63 & 265.4 & 274.0 & 1\,223 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-The guard schedule gave the first promotion with the 600~s window, 231.5
-against the seed's 533.4, in its first generation. The next nine generations
-at low reasoning effort, the rest of that run and two continuations from its
-champion, promoted nothing, although the
-measured record moved the candidates away from repeating failed changes and
-on to estimators that accounted for oscillating disturbances (the best
-scored 241.5). The same loop at high reasoning effort, seeded with that
-champion and its record of nine measured attempts, promoted a candidate in
-each of four generations: 230.3, 227.4, 212.4 and 206.3. The four changes
-were, in order, a pump-gain estimate corrected for the flow stored in the
-upper tanks, a feedback trim of the $h_1$ setpoint from the measured
-production error, a predictive version of that trim, and a shorter hold after
-the supervisor's own setpoint changes. A request at high effort produced
-about 80\,000 output tokens, against 16\,000--40\,000 at low effort, and the
-run cost about 0.63 US dollars. High effort and the inherited record were
-introduced in the same run, so the run does not separate their effects.
-All coordination runs together cost about 4.1 US dollars.
+The numbers in the rest of this paragraph were measured during the runs,
+with the original PI loops. The guard schedule gave the first promotion with
+the 600~s window, 231.5 against the seed's 533.4, in its first generation.
+The next nine generations at low reasoning effort, the rest of that run and
+two continuations from its champion, promoted nothing, although the measured
+record moved the candidates away from repeating failed changes and on to
+estimators that accounted for oscillating disturbances (the best scored
+241.5). The same loop at high reasoning effort, seeded with that champion
+and its record of nine measured attempts, promoted a candidate in each of
+four generations: 230.3, 227.4, 212.4 and 206.3. The four changes were, in
+order, a pump-gain estimate corrected for the flow stored in the upper tanks,
+a feedback trim of the $h_1$ setpoint from the measured production error, a
+predictive version of that trim, and a shorter hold after the supervisor's
+own setpoint changes. A request at high effort produced 53\,000--131\,000
+output tokens (84\,000 on average) from a prompt of 18\,000--25\,000 tokens,
+against 14\,000--61\,000 output tokens at low effort in the run before, and the run cost about
+0.63 US dollars. High effort and the inherited record were introduced in the
+same run, so the run does not separate their effects. All coordination runs
+together cost about 4.1 US dollars.
 
 Two setups were run several times with identical settings. Of the four
 runs with the 50~s window and the per-scenario guard, one promoted two
 candidates and three promoted none, and the champions of the three runs with
-the looser guard scored 255.6, 226.3 and 404.7 on the development battery. This is
-a first indication, for contribution~C3, that independent runs of the same
-setup can end far apart.
+the looser guard score 352.0, 291.5 and 417.3 on the development battery.
+This is a first indication, for contribution~C3, that independent runs of the
+same setup can end far apart.
 
 \section{Comparison with MPC}
 \label{sec:coord-results}
-Table~\ref{tab:coord-main} compares the best generated supervisor with the
-baselines. On the development battery it is within 1.3\% of the MPC with an
-estimated disturbance (206.3 against 203.7) and reduces the fixed recipe's
-score by 61\%. On the held-out battery it is 11\% worse than the MPC (214.9
-against 193.8). Its gap between the development and the held-out battery
-grew from about 2 to about 9 points over the last two generations, while the
-MPC, which was not tuned on the batteries, scored lower on the held-out
-battery than on the development battery. This suggests that the last
-promotions partly fit the development scenarios.
+Table~\ref{tab:coord-main} compares the best generated supervisor, the
+champion of the high-effort run, with the baselines. It reduces the fixed
+recipe's development score by 47\%, but it is 31\% worse than the untuned MPC
+and 67\% worse than the tuned MPC (265.4 against 158.8). On the held-out
+battery it is 61\% worse than the tuned MPC, and beyond the development range
+59\% worse. It is better than the tuned MPC on only 2 of the 42 development
+scenarios.
 
 \begin{table}[tb]
   \centering
-  \caption{Average score on the coordination batteries (lower is better).
-    The beyond-range battery is never shown to the LLM.}
+  \caption{Average score on the coordination batteries with the current test
+    bed (lower is better). The beyond-range battery is never shown to the
+    LLM. The generated supervisors were trained with the original PI loops.}
   \label{tab:coord-main}
   \begin{tabular}{@{}lrrr@{}}
     \toprule
     Controller & Development & Held-out & Beyond range \\
     \midrule
-    Fixed recipe (seed)                 & 533.4 & 478.7 & 1\,583.0 \\
-    Generated, low reasoning effort     & 231.5 & 247.5 & 1\,339.3 \\
-    Generated, high reasoning effort    & 206.3 & 214.9 & 1\,199.2 \\
-    MPC, estimated disturbance          & 203.7 & 193.8 & 1\,123.6 \\
-    MPC, oracle                         & 192.9 & 191.1 & 1\,110.9 \\
+    Fixed recipe (seed)                 & 498.3 & 447.0 & 1\,470.5 \\
+    Generated, low reasoning effort     & 278.9 & 289.7 & 1\,349.3 \\
+    Generated, high reasoning effort    & 265.4 & 274.0 & 1\,223.0 \\
+    Untuned MPC                         & 202.0 & 216.6 & 1\,081.5 \\
+    Tuned MPC                           & 158.8 & 170.4 &    770.2 \\
+    Tuned MPC, known disturbance        & 140.6 & 163.1 &    738.9 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
+This is a much larger gap than the runs suggested. With the original PI loops
+and against the untuned MPC, the same champion came within 1.3\% on the
+development battery (206.3 against 203.7). Two things changed after the runs,
+both before the protocol was registered. First, the MPC was tuned with a
+budget comparable to the LLM's, which lowered its development score by
+21\%. Second, the PI loops were retuned. The MPC's internal model includes
+the loops, so it adapts to new gains, but the generated supervisor encodes
+the old regulatory dynamics as constants (hold times, prediction horizons of
+its trim, settling assumptions), and its development score rose by 59
+points. The other champions lost 13 to 96 points the same way. The
+generated supervisors were not retrained with the new loops; the protocol
+runs are.
+\TODO{Confirm which constants in the champion cause the loss with the retuned loops, e.g.\ by re-scoring it with its hold time and trim horizon scaled to the new loop transient.}
+
 Table~\ref{tab:coord-metrics} splits the score into its terms, and
-Table~\ref{tab:coord-kind} by disturbance type. On the development battery
-the generated supervisor and the MPC are close on every term: production
-error 155.7 against 153.1~L and constraint violation 17.8 against 19.3~s per
-scenario, with somewhat more setpoint travel for the generated supervisor.
-By disturbance type it is better than the MPC on feed disturbances (345.0
-against 386.6), about equal on split disturbances, and worse on pump
-disturbances, combined disturbances and production-target changes. For both
-controllers, sine disturbances cost by far the most: 445.4 and 425.1 on
-average against below 100 for steps and ramps.
+Table~\ref{tab:coord-kind} by disturbance type. The generated supervisor
+violates the constraints about as rarely as the MPCs on the development and
+held-out batteries, and it moves its setpoints about half as much as the
+tuned MPC. Its deficit is production error: 230.5~L per scenario against
+119.7~L for the tuned MPC, and it recovers after a disturbance in about twice
+the time. By disturbance type it is better than the untuned MPC on feed
+disturbances and within about 20\% of it on split disturbances, but on production-target
+changes it is worse than the fixed recipe (403.1 against 294.5). This is the
+scenario type where its fixed timing matters most. By pattern, it is
+closest to the MPCs on sine disturbances (419.4 against 339.2 for the tuned
+MPC on the development battery) and furthest on steps and ramps, which the
+tuned MPC handles at a score of about 55.
 
 \begin{table}[tb]
   \centering
   \caption{Score terms, averaged per scenario: production IAE, seconds of
     band or upper-limit violation, setpoint total variation and recovery
-    time.}
+    time. Gen.\ is the high-effort champion.}
   \label{tab:coord-metrics}
   \begin{tabular}{@{}llrrrr@{}}
     \toprule
     Battery & Controller & IAE (L) & Violation (s) & TV (m) & Recovery (s) \\
     \midrule
-    Development & Fixed recipe & 199.1 & 165.8 & 0.03 & 288 \\
-                & Generated    & 155.7 &  17.8 & 0.15 & 206 \\
-                & MPC          & 153.1 &  19.3 & 0.12 & 193 \\
+    Development & Fixed recipe & 261.6 & 117.0 & 0.03 & 349 \\
+                & Generated    & 230.5 &  10.9 & 0.13 & 333 \\
+                & Untuned MPC  & 156.1 &  14.9 & 0.16 & 185 \\
+                & Tuned MPC    & 119.7 &   6.9 & 0.25 & 171 \\
     \midrule
-    Held-out    & Fixed recipe & 217.5 & 129.2 & 0.03 & 356 \\
-                & Generated    & 181.0 &   9.1 & 0.16 & 260 \\
-                & MPC          & 170.6 &   3.9 & 0.15 & 228 \\
+    Held-out    & Fixed recipe & 275.5 &  84.3 & 0.03 & 394 \\
+                & Generated    & 253.2 &   3.6 & 0.14 & 352 \\
+                & Untuned MPC  & 171.9 &  12.9 & 0.19 & 185 \\
+                & Tuned MPC    & 138.6 &   0.0 & 0.32 & 176 \\
     \midrule
-    Beyond      & Fixed recipe & 767.3 & 407.9 & 0.00 & 675 \\
-                & Generated    & 368.3 & 394.1 & 0.43 & 422 \\
-                & MPC          & 454.1 & 312.7 & 0.44 & 577 \\
+    Beyond      & Fixed recipe & 784.2 & 343.2 & 0.00 & 678 \\
+                & Generated    & 451.0 & 367.8 & 0.36 & 522 \\
+                & Untuned MPC  & 433.4 & 299.9 & 0.48 & 513 \\
+                & Tuned MPC    & 435.1 & 131.3 & 0.72 & 530 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -286,38 +347,94 @@ average against below 100 for steps and ramps.
     beyond-range battery. The beyond-range battery has no nominal
     scenarios.}
   \label{tab:coord-kind}
-  \begin{tabular}{@{}lrrrrrr@{}}
+  \small\setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}lrrrrrrrr@{}}
     \toprule
-    & \multicolumn{3}{c}{Development} & \multicolumn{3}{c}{Beyond range} \\
-    \cmidrule(lr){2-4}\cmidrule(l){5-7}
-    Type & Fixed & Generated & MPC & Fixed & Generated & MPC \\
+    & \multicolumn{4}{c}{Development} & \multicolumn{4}{c}{Beyond range} \\
+    \cmidrule(lr){2-5}\cmidrule(l){6-9}
+    Type & Fixed & Gen. & MPC & Tuned & Fixed & Gen. & MPC & Tuned \\
     \midrule
-    Nominal  & 251.8 & 230.1 & 213.0 &        --- &       --- &       --- \\
-    Feed     & 950.1 & 345.0 & 386.6 & 2\,166.0 & 1\,525.1 & 1\,394.3 \\
-    Pump     & 229.9 & 119.4 & 102.8 &    990.0 & 1\,213.3 &    931.2 \\
-    Split    & 415.7 & 124.1 & 120.6 & 1\,539.0 &    769.0 &    871.8 \\
-    Combined & 725.5 & 220.7 & 198.8 & 1\,637.0 & 1\,289.3 & 1\,297.0 \\
+    Nominal  & 294.5 & 403.1 & 229.2 & 210.8 &      --- &      --- &      --- &   --- \\
+    Feed     & 827.2 & 333.6 & 380.9 & 287.7 & 2\,006 & 1\,589 & 1\,317 & 962 \\
+    Pump     & 239.5 & 192.0 &  99.5 &  62.7 & 1\,010 & 1\,220 &    923 & 529 \\
+    Split    & 391.6 & 153.7 & 127.1 & 100.9 & 1\,318 &    788 &    882 & 630 \\
+    Combined & 670.9 & 290.5 & 182.2 & 149.1 & 1\,549 & 1\,295 & 1\,204 & 960 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \paragraph{Beyond the development range.} All controllers degrade sharply
-beyond the development range, as intended by the calibration. The generated
-supervisor's score rose by a factor of 5.8 (206.3 to 1\,199.2) and the MPC's
-by 5.5 (203.7 to 1\,123.6), so the generated supervisor ends 6.7\% above the
-MPC. The two degrade differently. The generated supervisor keeps production
-closer to the target than the MPC (368.3 against 454.1~L) but violates the
-constraints for longer (394.1 against 312.7~s), so it trades constraints for
-production where the MPC does the opposite. By type, it does better than the
-MPC on split disturbances and as well on combined ones, but on large pump-gain
-losses it scores worse than the fixed recipe (1\,213.3 against 990.0). Why
-has not yet been analyzed.
-\TODO{Trace the beyond-range pump scenarios, and add a figure with one development and one beyond-range trajectory of both controllers.}
+beyond the development range, as intended by the calibration. The score of
+the generated supervisor rises by a factor of 4.6 (265.4 to 1\,223.0), that
+of the tuned MPC by 4.8 and that of the untuned MPC by 5.4. Relative to
+their development scores, they thus degrade at similar rates, which is the
+quantity hypothesis $H_{0,2}$ is about. The way they degrade differs. The
+generated supervisor holds production about as close to the target as both
+MPCs (451.0 against 435.1~L for the tuned MPC), but violates the constraints
+for almost three times as long (367.8 against 131.3~s), so it gives up the
+constraints to hold production. It does better than the untuned MPC on split
+disturbances, but on large pump-gain losses it scores worse than the fixed
+recipe (1\,219.9 against 1\,009.5). Why has not yet been analysed.
+\TODO{Trace the beyond-range pump scenarios, and add a figure with one development and one beyond-range trajectory of the champion and the tuned MPC.}
+
+\section{Stress tests}
+\label{sec:coord-stress}
+Table~\ref{tab:coord-stress} shows how the champion and the baselines change
+under conditions none of them was designed or trained for, on the 84
+development and held-out scenarios. The tests are exploratory and were run
+before the protocol was registered. The conditions are Gaussian noise of 1
+or 3~mm on the four level measurements; two draws of plant mismatch, in
+which every plant parameter of the simulated plant (outlet areas, pump gains,
+valve splits) is scaled by a factor of about 0.9--1.1 while the controllers'
+models keep the nominal values; a production measurement that arrives 60~s
+late and is updated every 30~s, like a particle-size analyser; and three
+telemetry faults, in which $h_3$ reads NaN, $h_4$ freezes or the production
+measurement freezes. The PI loops keep their own measurements in the fault
+conditions.
+
+\begin{table}[tb]
+  \centering
+  \caption{Stress tests: mean score over the development and held-out
+    batteries (84 scenarios), and the change against the same controller
+    without stress.}
+  \label{tab:coord-stress}
+  \small\setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    Condition & Generated & Fixed recipe & Untuned MPC & Tuned MPC \\
+    \midrule
+    Nominal             & 269.7          & 472.7          & 209.3          & 164.6 \\
+    Noise 1~mm          & 263.7 (−2\%)   & 472.5 (0\%)    & 198.0 (−5\%)   & 241.9 (+47\%) \\
+    Noise 3~mm          & 278.1 (+3\%)   & 472.2 (0\%)    & 244.4 (+17\%)  & 421.0 (+156\%) \\
+    Mismatch A          & 801.1 (+197\%) & 955.0 (+102\%) & 881.6 (+321\%) & 838.0 (+409\%) \\
+    Mismatch B          & 469.4 (+74\%)  & 560.8 (+19\%)  & 506.2 (+142\%) & 432.2 (+163\%) \\
+    Analyser delay      & 277.1 (+3\%)   & 472.7 (0\%)    & 209.3 (0\%)    & 164.6 (0\%) \\
+    $h_3$ reads NaN     & 439.9 (+63\%)  & 537.9 (+14\%)  & 490.2 (+134\%) & 531.9 (+223\%) \\
+    $h_4$ stuck         & 276.5 (+3\%)   & 472.7 (0\%)    & 212.5 (+2\%)   & 173.7 (+6\%) \\
+    Production stuck    & 279.9 (+4\%)   & 472.7 (0\%)    & 209.3 (0\%)    & 164.6 (0\%) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The tuned MPC is the most fragile of the four controllers. Measurement noise
+of 3~mm more than doubles its score, which puts it behind the generated
+supervisor (421.0 against 278.1), and it degrades most under plant mismatch
+and when $h_3$ reads NaN, where the safety wrapper holds every controller's
+setpoints for the rest of the episode. Its tuning made it sharper on the
+nominal model at the cost of robustness. The generated supervisor is almost
+unaffected by noise, presumably because it estimates the disturbance from
+averages and slopes over the 600~s window, and it is the best of the four when $h_3$ fails. The
+analyser delay and the frozen production measurement do not affect the MPCs,
+which predict production from the levels instead of reading it, and change the generated
+supervisor by 3--4\%. Under plant mismatch every controller degrades
+strongly, the fixed recipe least in relative terms; in absolute terms the
+generated supervisor and the tuned MPC remain close. These conditions show
+that ranking the controllers on the nominal test bed alone is incomplete.
 
 \section{The generated supervisor}
 \label{sec:coord-champion}
 The best supervisor is a single Python function of 261 lines. It works as a
-steady-state optimizer with a feedback trim, a structure that the LLM arrived
+steady-state optimiser with a feedback trim, a structure that the LLM arrived
 at by itself from the seed's fixed recipe:
 \begin{enumerate}
 \item It estimates the extra inflow to each lower tank from a mass balance:
@@ -330,7 +447,7 @@ at by itself from the seed's fixed recipe:
 \item It divides the production target between the two lower tanks by
   trying 61 splits. For each it computes, from the steady-state model with
   the estimated disturbance, the required pump flows, the upper levels and
-  the pump voltages, and it penalizes upper levels within 0.05~m of the limit,
+  the pump voltages, and it penalises upper levels within 0.05~m of the limit,
   $h_2$ outside its band, saturated pumps and the size of the setpoint move.
   The resulting setpoints move at most 0.06~m per decision.
 \item It trims the $h_1$ setpoint with the production error predicted 80~s
@@ -344,7 +461,23 @@ at by itself from the seed's fixed recipe:
 \end{enumerate}
 The code added by the promoted candidates is commented with the reasoning
 behind it, in one place including the measured effect of an earlier
-variant. The lessons kept from the four promoted
-candidates are statements about the process, for example that ``a setpoint
-change needs 1.5--2 minutes to reach the product, so a proportional error
-trim corrects each swing after its trough''.
+variant. The lessons kept from the four promoted candidates are statements
+about the process, for example that ``a setpoint change needs 1.5--2 minutes
+to reach the product, so a proportional error trim corrects each swing after
+its trough''. Steps 4 and 5 are exactly the constants that describe the
+transient of the original PI loops. That they are visible and commented is
+what made it possible to point to them as the likely cause of the loss with
+the retuned loops; in an MPC the same knowledge sits in the internal model,
+which was updated with the loops.
+
+\section{Status of the confirmatory comparison}
+\label{sec:coord-status}
+Because the loop, the comparator and the test bed all changed while the
+validation batteries were being looked at, the exploratory runs cannot
+answer $H_{0,1}$ or $H_{0,2}$. The pre-registered protocol of
+Section~\ref{sec:protocol} fixes all of them and runs eight independent runs
+of six generations each at high reasoning effort, from the fixed recipe and
+with the retuned loops, against the tuned MPC on the sealed test battery.
+As of this draft the protocol is registered (version~2) and no protocol run
+has been made.
+\TODO{Report the eight protocol runs and the sealed-test analysis ($H_{0,1}$, $H_{0,2}$, C3) once they are done.}
