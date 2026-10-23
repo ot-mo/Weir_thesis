@@ -317,8 +317,9 @@ tuned MPC handles at a score of about 55.
   \centering
   \caption{Score terms, averaged per scenario: production IAE, seconds of
     band or upper-limit violation, setpoint total variation and recovery
-    time. Gen.\ is the high-effort champion.}
+    time. Generated is the high-effort champion.}
   \label{tab:coord-metrics}
+  \small
   \begin{tabular}{@{}llrrrr@{}}
     \toprule
     Battery & Controller & IAE (L) & Violation (s) & TV (m) & Recovery (s) \\
@@ -344,7 +345,8 @@ tuned MPC handles at a score of about 55.
 \begin{table}[tb]
   \centering
   \caption{Average score by disturbance type on the development and the
-    beyond-range battery. The beyond-range battery has no nominal
+    beyond-range battery. Gen.\ is the high-effort champion, MPC the
+    untuned and Tuned the tuned MPC. The beyond-range battery has no nominal
     scenarios.}
   \label{tab:coord-kind}
   \small\setlength{\tabcolsep}{4pt}
@@ -398,13 +400,13 @@ conditions.
     batteries (84 scenarios), and the change against the same controller
     without stress.}
   \label{tab:coord-stress}
-  \small\setlength{\tabcolsep}{4pt}
+  \small\setlength{\tabcolsep}{3pt}
   \begin{tabular}{@{}lrrrr@{}}
     \toprule
     Condition & Generated & Fixed recipe & Untuned MPC & Tuned MPC \\
     \midrule
     Nominal             & 269.7          & 472.7          & 209.3          & 164.6 \\
-    Noise 1~mm          & 263.7 (−2\%)   & 472.5 (0\%)    & 198.0 (−5\%)   & 241.9 (+47\%) \\
+    Noise 1~mm          & 263.7 ($-$2\%)   & 472.5 (0\%)    & 198.0 ($-$5\%)   & 241.9 (+47\%) \\
     Noise 3~mm          & 278.1 (+3\%)   & 472.2 (0\%)    & 244.4 (+17\%)  & 421.0 (+156\%) \\
     Mismatch A          & 801.1 (+197\%) & 955.0 (+102\%) & 881.6 (+321\%) & 838.0 (+409\%) \\
     Mismatch B          & 469.4 (+74\%)  & 560.8 (+19\%)  & 506.2 (+142\%) & 432.2 (+163\%) \\

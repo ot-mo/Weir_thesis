@@ -52,16 +52,21 @@ nothing between calls and sees only its arguments, so its behaviour is fully
 determined by the telemetry it is given. Two variants are used.
 \begin{description}
 \item[Fault detection] On the leak test beds of Chapter~\ref{ch:toy}, the
-  function is \texttt{supervise(telemetry\_window, active\_setpoints,
-  nominal\_targets)}. The telemetry window holds, for each controlled tank
+  function is
+  \begin{center}
+  \texttt{supervise(telemetry\_window, active\_setpoints, nominal\_targets)}.
+  \end{center}
+  The telemetry window holds, for each controlled tank
   and each sample, the level, the output of the loop regulating it (pump
   effort) and the control error. The function returns a free-text diagnosis,
   one adjusted setpoint per loop and one boolean anomaly flag per loop. The
   returned flags are held until the next decision.
 \item[Setpoint coordination] On the coordination test bed of
   Chapter~\ref{ch:coord} and on the grinding circuit, the function is
-  \texttt{supervise(telemetry\_window, active\_setpoints, objectives)} and
-  returns a diagnosis and the new setpoints, without anomaly flags. The
+  \begin{center}
+  \texttt{supervise(telemetry\_window, active\_setpoints, objectives)}
+  \end{center}
+  and returns a diagnosis and the new setpoints, without anomaly flags. The
   window holds every logged signal together with the setpoints and targets
   that were in force at each sample, as a distributed control system logs
   them, so that the supervisor can see its own earlier moves. The objectives
