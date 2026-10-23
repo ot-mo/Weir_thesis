@@ -13,16 +13,23 @@ gaming, and it required some LLM reasoning: without it the search stalled
 well above the oracle.
 
 On a setpoint-coordination version of the quadruple-tank process, which
-rehearses the industrial comparison, the best generated supervisor came
-within 1.3\% of a model predictive controller with online disturbance
-estimation on the development scenarios, and was 11\% worse on held-out
-scenarios and 6.7\% worse beyond the development range. Like the MPC it
-degraded sharply beyond the development range, but it gave up constraint
-satisfaction to hold production, where the MPC did the opposite. Reaching
-this score took a regression guard that loosens in early generations, a
-measured record of failed changes in the prompt and high reasoning effort,
-and it was reached in a single run; all coordination runs together cost
-about 4 US dollars.
+rehearses the industrial comparison, the exploratory runs gave a supervisor that
+came within 1.3\% of an untuned model predictive controller with online
+disturbance estimation, with the PI loops it was trained on. With retuned,
+robust PI loops and against the same controller tuned on the development
+scenarios with a comparable budget, it scored 67\% worse on the development
+scenarios and about 60\% worse on held-out and beyond-range scenarios, while
+still halving the score of the fixed recipe. The generated supervisor had
+encoded the transient of the old loops as constants, which the MPC's model
+did not need to. Both controllers degraded at similar relative rates beyond
+the development range, the generated supervisor by giving up the
+constraints to hold production. The tuned MPC was the more fragile under
+measurement noise and plant mismatch. Reaching the champion took a
+regression guard that loosens in early generations, a measured record of
+failed changes in the prompt and high reasoning effort, and it was reached in
+a single hand-steered chain of runs; all coordination runs together cost about
+4 US dollars. Whether the method matches the MPC is left to the pre-registered
+protocol (Section~\ref{sec:protocol}).
 \TODO{Answer the research questions once the industrial study is done.}
 
 \section{Future work}
@@ -36,6 +43,12 @@ about 4 US dollars.
   description and the decision traces. For setpoint coordination, separate
   the effect of high reasoning effort from that of the inherited record of
   failed changes.
-\item Fix the weights of the coordination score with Weir's operators
+\item Fix the weights of the grinding-circuit score with Weir's operators
   before the industrial comparison.
+\item Give the trainer the regulatory-loop dynamics as a measured input, or
+  retrain automatically when the loops are retuned, so that generated
+  supervisors do not silently depend on the loop tuning.
+\item Include measurement noise and plant mismatch in the evaluation, since
+  they reversed the robustness ranking of the generated supervisor and the
+  tuned MPC.
 \end{itemize}

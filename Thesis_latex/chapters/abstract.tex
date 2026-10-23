@@ -22,8 +22,12 @@ generations, whereas the same search without reasoning stagnated at about
 evaluation, including safeguards against specification gaming and checks that
 the test bed itself is sound, matters as much as the choice of model. On a
 setpoint-coordination version of the quadruple-tank process, which rehearses
-the industrial comparison, the best generated supervisor came within 1.3\%
-of a model predictive controller on the development scenarios and within
-11\% on held-out scenarios, and both degraded similarly beyond the
-development range.
+the industrial comparison, the best generated supervisor of the exploratory
+runs halved the score of the fixed operating recipe but scored 67\% worse
+than a model predictive controller tuned with a comparable budget, once the
+regulatory loops were retuned; it had been within 1.3\% of an untuned
+controller with the original loops. Both degraded at similar rates beyond the
+development range, and the generated supervisor was the more robust of the two
+to measurement noise. A pre-registered protocol with eight independent runs
+and a sealed test battery fixes the confirmatory comparison.
 \TODO{Add the result of the comparison on the industrial process and against TD-MPC.}
