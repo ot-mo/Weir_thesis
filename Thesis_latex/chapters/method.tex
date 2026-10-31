@@ -345,7 +345,7 @@ samples without the feedback loop) are planned as exploratory.
 
 \section{Industrial case: the grinding circuit}
 \label{sec:mill}
-\TODO{This section describes the setup as implemented on 2026-10-23. No LLM training run on the grinding circuit and no comparison with TD-MPC has been made yet, and the values marked provisional below are to be frozen in the grinding-circuit protocol.}
+\TODO{This section describes the setup as implemented on 2026-10-23, apart from the TD-MPC evaluation (2026-10-31). Since then the score has become multi-objective (2026-10-26: P80 range, sump and circulating-load bands, safety, energy per tonne of ore, circulating load near 500\%) and the batteries have two scenarios per cell; update the score and scenario paragraphs. The values marked provisional are to be frozen in the grinding-circuit protocol.}
 
 \paragraph{Simulator.} The industrial case uses Weir's dynamic simulator of a
 secondary ball-mill circuit in reverse configuration, written in JAX. Fresh
@@ -375,7 +375,7 @@ cyclones (7--9), the cyclone pressure setpoint (9--13~psi), the sump density
 setpoint (1.60--1.80~t/m$^3$), the mill water addition (30--120~t/h) and the
 mill speed setpoint (10--15~rpm). The wrapper limits each move to one cyclone,
 1~psi, 0.05~t/m$^3$, 20~t/h and 1~rpm per decision (provisional). The
-supervisor is called every 60~s, the TD-MPC's action interval, with a window
+supervisor is called every 60~s (the TD-MPC every 300~s, see below), with a window
 of the last 30 minutes sampled every 10~s. It sees the TD-MPC's 30 sensors
 (fresh feed, mill, sump, pump and cyclone measurements and the circulating
 load) and may ask for up to eight more simulator signals. Measurements are
@@ -424,4 +424,72 @@ same simulator setting with the feed held constant over each episode within
 the development range; it learns a latent model of the circuit and plans the
 same five setpoints over a 40-minute horizon. Its trained model is to be
 evaluated on the same batteries.
-\TODO{Describe the TD-MPC evaluation once Weir's trained model is available, and note that it was trained on constant feed while the scenarios vary the feed over time.}
+\paragraph{Evaluation of the TD-MPC.} Weir's trained model is run in the same
+harness as the LLM supervisors, on the same scenarios, through the same safety
+wrapper and with the same score. At each decision it receives the last
+15~minutes of the 30 sensors sampled once a minute, together with the P80
+target, and returns the five setpoints. It was trained to hold each action for
+300~s, so it is evaluated at its own interval of 300~s and, as a variant, at
+60~s, where it replans every minute and applies the first step of each plan.
+Its planner is reset before every episode. Two differences between the
+comparators are deliberate and reported rather than removed. First, the
+TD-MPC was trained with the feed held constant over each episode, while most
+scenarios vary the feed as ramps and sines, so the results are also split
+into steady and step scenarios against ramp and sine scenarios. Second, the
+TD-MPC maximises its own reward, not the score of this thesis: a product of
+bell functions around the P80 target (weight 0.5), a sump level of 75\% (1.0)
+and a circulating load of 500\% (0.25), plus a term in the net mill power and
+a penalty near the sump limits. Every episode is therefore scored twice, with
+the score and with the TD-MPC's reward per 10~s sample averaged over the
+episode, where samples after the simulator stops count as zero. To separate
+the controllers from their decision intervals, the LLM champions and the
+decentralised PI supervisor are also run at 300~s.
+
+\paragraph{First comparison with the TD-MPC.} The comparison was run on
+2026-10-31 with the champions of three independent LLM training runs after
+eight generations, on 28 development, 28 validation and 24 beyond-range
+scenarios of two hours each (Table~\ref{tab:mill-tdmpc}).
+\TODO{Move this paragraph and the table to a grinding-circuit results chapter, and re-run on the original regulatory layer and the final batteries of the protocol.}
+
+\begin{table}[tb]
+  \centering
+  \caption{The LLM champions against Weir's TD-MPC on the grinding circuit,
+    with the decision interval of each row. Mean score (lower is better) /
+    mean TD-MPC reward (higher is better, at most 1) per battery; in
+    parentheses the number of episodes in which the sump overflowed or ran
+    dry. The fixed recipe does not act.}
+  \label{tab:mill-tdmpc}
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    Controller & Development & Validation & Beyond \\
+    \midrule
+    LLM run 1 (60~s)         & 65.3 / 0.980 & 66.9 / 0.966 & 98.4 / 0.893 \\
+    LLM run 2 (60~s)         & 65.0 / 0.876 & 65.3 / 0.878 & 138.5 / 0.732 \\
+    LLM run 3 (60~s)         & 63.5 / 0.870 & 83.1 / 0.831 & 148.4 / 0.784 \\
+    TD-MPC (300~s)           & 72.5 / 0.887 & 111.6 / 0.856 & 662.7 / 0.656 (3) \\
+    TD-MPC (60~s)            & 69.3 / 0.922 & 80.4 / 0.891 & 190.8 / 0.729 \\
+    Decentralised PI (60~s)  & 184.4 / 0.605 (1) & 112.4 / 0.663 & 897.3 / 0.347 (2) \\
+    Fixed recipe             & 2754.7 / 0.188 (18) & 2712.2 / 0.187 (16) & 4310.4 / 0.118 (21) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+All three champions score better than the TD-MPC on every battery, except
+run~3 on validation against the TD-MPC at 60~s. On the TD-MPC's own reward,
+only run~1 is better everywhere. Runs~2 and~3 lose on the development and
+validation batteries: the score only penalises a P80 outside its range of
+180--200~$\mu$m, while the reward pulls the P80 towards the target, and run~2
+holds it about twice as far from the target as the TD-MPC (an integrated
+absolute error of 10.3 against 4.3--5.1~$\mu$m$\cdot$h on development). Beyond
+the training range every champion is better on both measures. The decision
+interval matters for every controller. At 300~s the champions degrade
+strongly (development scores of 82.9, 125.1 and 331.7, and two to nine beyond
+episodes in which the sump overflows or runs dry) and fall behind the TD-MPC
+on development, and the decentralised PI degrades from 184.4 to 474.4. The
+TD-MPC itself scores better at 60~s than at the 300~s it was trained for.
+Its gap to the champions is mostly in the ramp and sine scenarios, outside
+its training distribution: at 300~s on validation it scores 71.2 on steady
+and step scenarios against 66.0--68.9 for the champions, but 142.0 on ramps
+and sines against 64.8--95.7. Energy per tonne of ore makes up 90--98\% of
+every good score and differs little between the controllers; the
+differences are in the sump-level band, the P80 and, at 300~s, safety.
