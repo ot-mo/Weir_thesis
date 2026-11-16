@@ -1,0 +1,84 @@
+\chapter{Results on the grinding circuit}
+\label{ch:mill-results}
+\TODO{Section plan and sources: THESIS\_GUIDE.md, Chapter 6. Every table gives the mean score / TD-MPC reward (and the normalised score where available) on the development, validation and beyond-range batteries, with terminal episodes in parentheses.}
+
+\section{Training runs}
+\label{sec:mill-runs}
+\TODO{The runs (v4 at 60~s, pilot\_300s, protocol\_run1--2, explore\_run1--3, noise\_run1--2), their cost, the champion score per generation (figure), the levers the LLM found, and the spread between runs.}
+
+\section{Main comparison at 300 s}
+\label{sec:mill-main}
+\TODO{The champions against the TD-MPC, the decentralised PI and the fixed recipe at 300~s: score, reward, normalised score, control penalty and kWh/t, score terms, steady/step against ramp/sine, per-scenario paired differences.}
+
+\section{Beyond the development range}
+\label{sec:mill-beyond}
+\TODO{Degradation from development to beyond range, terminal episodes, what fails (mostly the sump-level band), catalogue of failure modes with one trajectory each.}
+
+\section{Score and reward disagree on the sump level}
+\label{sec:mill-reward}
+\TODO{The reward split by term: the score charges nothing inside 70--80\%, the reward's level term is a narrow bell around 75\%; champions with equal scores differ in reward by how tightly they hold 75\%.}
+
+\section{Decision interval}
+\label{sec:mill-interval}
+\TODO{Every controller is tuned to its own rate. One table with 60, 300 and 900~s. The 60~s comparison below is the first, exploratory one and becomes a variant here.}
+
+\paragraph{First comparison with the TD-MPC, at 60~s.} The comparison was run on
+2026-10-31 with the champions of three independent LLM training runs after
+eight generations, on 28 development, 28 validation and 24 beyond-range
+scenarios of two hours each (Table~\ref{tab:mill-tdmpc}).
+
+\begin{table}[tb]
+  \centering
+  \caption{The LLM champions against Weir's TD-MPC on the grinding circuit,
+    with the decision interval of each row. Mean score (lower is better) /
+    mean TD-MPC reward (higher is better, at most 1) per battery; in
+    parentheses the number of episodes in which the sump overflowed or ran
+    dry. The fixed recipe does not act.}
+  \label{tab:mill-tdmpc}
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    Controller & Development & Validation & Beyond \\
+    \midrule
+    LLM run 1 (60~s)         & 65.3 / 0.980 & 66.9 / 0.966 & 98.4 / 0.893 \\
+    LLM run 2 (60~s)         & 65.0 / 0.876 & 65.3 / 0.878 & 138.5 / 0.732 \\
+    LLM run 3 (60~s)         & 63.5 / 0.870 & 83.1 / 0.831 & 148.4 / 0.784 \\
+    TD-MPC (300~s)           & 72.5 / 0.887 & 111.6 / 0.856 & 662.7 / 0.656 (3) \\
+    TD-MPC (60~s)            & 69.3 / 0.922 & 80.4 / 0.891 & 190.8 / 0.729 \\
+    Decentralised PI (60~s)  & 184.4 / 0.605 (1) & 112.4 / 0.663 & 897.3 / 0.347 (2) \\
+    Fixed recipe             & 2754.7 / 0.188 (18) & 2712.2 / 0.187 (16) & 4310.4 / 0.118 (21) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+All three champions score better than the TD-MPC on every battery, except
+run~3 on validation against the TD-MPC at 60~s. On the TD-MPC's own reward,
+only run~1 is better everywhere. Runs~2 and~3 lose on the development and
+validation batteries: the score only penalises a P80 outside its range of
+180--200~$\mu$m, while the reward pulls the P80 towards the target, and run~2
+holds it about twice as far from the target as the TD-MPC (an integrated
+absolute error of 10.3 against 4.3--5.1~$\mu$m$\cdot$h on development). Beyond
+the training range every champion is better on both measures. The decision
+interval matters for every controller. At 300~s the champions degrade
+strongly (development scores of 82.9, 125.1 and 331.7, and two to nine beyond
+episodes in which the sump overflows or runs dry) and fall behind the TD-MPC
+on development, and the decentralised PI degrades from 184.4 to 474.4. The
+TD-MPC itself scores better at 60~s than at the 300~s it was trained for.
+Its gap to the champions is mostly in the ramp and sine scenarios, outside
+its training distribution: at 300~s on validation it scores 71.2 on steady
+and step scenarios against 66.0--68.9 for the champions, but 142.0 on ramps
+and sines against 64.8--95.7. Energy per tonne of ore makes up 90--98\% of
+every good score and differs little between the controllers; the
+differences are in the sump-level band, the P80 and, at 300~s, safety.
+
+\section{Robustness to noise}
+\label{sec:mill-noise-results}
+\TODO{Measurement noise on P80 (does not reach the TD-MPC), plant-wide measurement noise (reverses the noise-free ranking; the one-line level-trend estimator of explore\_run2), training under measurement noise (prompt version 7), fresh-feed fluctuations with measurement noise as ablation, and how to measure under noise (fresh draws, several draws per scenario).}
+
+\section{The generated supervisors}
+\label{sec:mill-champions}
+\TODO{What a champion looks like: length, structure, rule count (goal document), readability; the full listing in an appendix.}
+
+\section{Confirmatory comparison on the sealed test battery}
+\label{sec:mill-sealed}
+\TODO{$H_{0,1}$, $H_{0,2}$ and C3 with intervals, after the protocol runs. If they are not run, state what the exploratory results can and cannot claim.}
+

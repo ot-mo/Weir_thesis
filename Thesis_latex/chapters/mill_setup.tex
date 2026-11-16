@@ -1,0 +1,116 @@
+\chapter{The grinding circuit and the comparison}
+\label{ch:mill}
+\TODO{This chapter is the former Section ``Industrial case'' of the Method chapter, moved unchanged. Update it as listed in THESIS\_GUIDE.md, Chapter 5: decision interval 300~s for the main comparison (60 and 900~s as variants); batteries of 28 development, 28 validation and 24 beyond-range scenarios (2 per cell) plus the sealed battery; the beyond-range values as a table; the multi-objective score that replaced Equation~\eqref{eq:mill-score} (P80 outside 180--200~$\mu$m, level and circulating-load bands, safety, energy per tonne of ore, circulating load near 500\%; travel and P80 IAE reported only), the control penalty and the normalised score; the noise models; a flowsheet figure.}
+
+\section{Simulator, regulatory layer and interface}
+\label{sec:mill-plant}
+
+\paragraph{Simulator.} The industrial case uses Weir's dynamic simulator of a
+secondary ball-mill circuit in reverse configuration, written in JAX. Fresh
+slurry enters the sump, a pump feeds the sump slurry to a cluster of
+hydrocyclones, the cyclone overflow is the product, whose particle size P80 is
+the quality variable, and the underflow returns through the ball mill to the
+sump. Water is added at the sump and at the mill inlet. The circulating load
+is the ratio of underflow solids to fresh-feed solids. The experiment uses the
+setting of Weir's TD-MPC environment: explicit Euler integration with a 10~s
+scan. One simulated hour takes about 82~s of wall time, most of it in the
+regulatory layer, so the batteries are evaluated in a pool of processes.
+Episodes last two hours and start from a warm start, the circuit settled for
+three hours at the nominal recipe.
+
+\paragraph{Regulatory layer.} The lowest layer is Weir's own controller chain
+for the circuit, used unchanged: a feed generator, through which the
+disturbances enter, and five PID loops, all sampled every second. The cyclone
+pressure is controlled by the pump flow setpoint, with an override on the
+sump level near the edges of its range; the pump flow by the pump speed; the
+sump density by the setpoint of the sump water flow, which has its own inner
+flow loop; and the mill water flow by its valve. The number of operating
+cyclones and the mill speed are applied directly.
+
+\paragraph{Setpoints and interface.} The supervisor sets the same five
+setpoints as the TD-MPC, within the same limits: the number of operating
+cyclones (7--9), the cyclone pressure setpoint (9--13~psi), the sump density
+setpoint (1.60--1.80~t/m$^3$), the mill water addition (30--120~t/h) and the
+mill speed setpoint (10--15~rpm). The wrapper limits each move to one cyclone,
+1~psi, 0.05~t/m$^3$, 20~t/h and 1~rpm per decision (provisional). The
+supervisor is called every 60~s (the TD-MPC every 300~s, see below), with a window
+of the last 30 minutes sampled every 10~s. It sees the TD-MPC's 30 sensors
+(fresh feed, mill, sump, pump and cyclone measurements and the circulating
+load) and may ask for up to eight more simulator signals. Measurements are
+noise-free. The objectives are the P80 target (190~$\mu$m nominally), the sump
+level band 70--80\%, the safety bounds of the sump level, 20 and 95\%, at
+which the simulator stops, and the circulating-load band 400--600\%.
+
+\section{Operating point and scenarios}
+\label{sec:mill-scenarios}
+\paragraph{Operating point and scenarios.} The nominal feed is the centre of
+the TD-MPC's training range: 1\,250~m$^3$/h of slurry, ore density
+2.60~t/m$^3$ and 41.5\% solids by volume. The nominal recipe is 9 cyclones,
+11~psi, a density setpoint of 1.697~t/m$^3$, 50~t/h of mill water and 13~rpm,
+which gives a sump level of 75\% and a P80 of 188~$\mu$m. Disturbances act on
+the feed flow ($\pm$2--8\% in the development range), the ore density
+($\pm$0.03--0.10~t/m$^3$) and the solids content ($\pm$0.5--1.5 percentage
+points), so that the development range is the TD-MPC's training range. They
+start after 5--20 minutes, as steps, ramps over 10--30 minutes or sines with
+periods of 20--60 minutes. The nominal scenarios step the P80 target by
+2.5--5\% and back. Beyond the development range the amplitudes are 1.25 to 2
+times the half-widths of the training range (provisional). One scenario per
+cell gives 14 development, 14 held-out and 12 beyond-range scenarios for
+training.
+\TODO{Define the size of the final evaluation batteries for the grinding circuit.}
+
+\section{Score}
+\label{sec:mill-score}
+\paragraph{Score.} The score per scenario is
+\begin{equation}
+  J_s = \mathrm{IAE}_{\mathrm{P80},s} + 0.1\,(B_s + C_s) + V_s
+        + 50\,\mathrm{TV}_s + 10^3\,E_s ,
+  \label{eq:mill-score}
+\end{equation}
+where $\mathrm{IAE}_{\mathrm{P80},s}$ is the integrated absolute P80 error in
+$\mu$m$\cdot$h, $B_s$ and $C_s$ the seconds with the sump level and the
+circulating load outside their bands, $V_s$ the seconds outside the safety
+bounds of the sump level (including the rest of the episode after the
+simulator stops), $\mathrm{TV}_s$ the total variation of the setpoints, each
+normalised by its range, and $E_s$ the number of exceptions (provisional
+weights). The recovery time to within 5\% of the P80 target and the mill power
+are reported but not scored.
+
+\section{Training and comparators}
+\label{sec:mill-comparators}
+\paragraph{Training and comparators.} The trainer is the loop of
+Section~\ref{sec:training-loop} with three candidates per generation and the
+guard schedule, ported to the simulator. A generation takes about 45 minutes
+of simulation. Besides the fixed recipe, a decentralised PI supervisor serves
+as a simple baseline: it trims the density setpoint from the P80 error and the
+pressure setpoint from the sump level. The TD-MPC was trained by Weir on the
+same simulator setting with the feed held constant over each episode within
+the development range; it learns a latent model of the circuit and plans the
+same five setpoints over a 40-minute horizon. Its trained model is to be
+evaluated on the same batteries.
+
+\paragraph{Evaluation of the TD-MPC.} Weir's trained model is run in the same
+harness as the LLM supervisors, on the same scenarios, through the same safety
+wrapper and with the same score. At each decision it receives the last
+15~minutes of the 30 sensors sampled once a minute, together with the P80
+target, and returns the five setpoints. It was trained to hold each action for
+300~s, so it is evaluated at its own interval of 300~s and, as a variant, at
+60~s, where it replans every minute and applies the first step of each plan.
+Its planner is reset before every episode. Two differences between the
+comparators are deliberate and reported rather than removed. First, the
+TD-MPC was trained with the feed held constant over each episode, while most
+scenarios vary the feed as ramps and sines, so the results are also split
+into steady and step scenarios against ramp and sine scenarios. Second, the
+TD-MPC maximises its own reward, not the score of this thesis: a product of
+bell functions around the P80 target (weight 0.5), a sump level of 75\% (1.0)
+and a circulating load of 500\% (0.25), plus a term in the net mill power and
+a penalty near the sump limits. Every episode is therefore scored twice, with
+the score and with the TD-MPC's reward per 10~s sample averaged over the
+episode, where samples after the simulator stops count as zero. To separate
+the controllers from their decision intervals, the LLM champions and the
+decentralised PI supervisor are also run at 300~s.
+
+\section{Noise models}
+\label{sec:mill-noise}
+\TODO{Measurement noise (P80 white $\sigma = 5~\mu$m, P80 analyser, the plant-wide \texttt{plant} model) and fresh-feed fluctuations (\texttt{feed15}): what each is, its sizes and which are guesses, paired draws across controllers, fresh draws for runs trained under noise. Sources: mill repository \texttt{docs/noise/noise\_v1.md}, \texttt{docs/feed\_noise.md}, \texttt{llm\_supervisor/noise.py}.}
+
