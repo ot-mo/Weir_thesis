@@ -1,200 +1,363 @@
 \chapter{Results on the grinding circuit}
 \label{ch:mill-results}
 % Purpose (THESIS_GUIDE.md, Ch. 6): the answer to the research questions.
-% Every table: mean score / TD-MPC reward (and normalised score where
-% available) on development / validation / beyond, terminal episodes in
-% parentheses. Compare from several perspectives (P80, level, circulating
-% load, safety, energy), not only the total score (2026-11-19 meeting).
-% Sections 6.1-6.7 are exploratory; 6.8 is the confirmatory result.
-% Target 15-20 pages.
-\TODO{Introduction (one paragraph): which results are exploratory (champions
-selected on the batteries they are compared on) and which are confirmatory
-(Section~\ref{sec:mill-sealed}).}
+% Numbers (mill repo, lib/llm-supervisor/docs/): explore_exploit.md,
+% explore_runs/fair_v1_explore_runs.md, explore_runs/reward_terms_v1.md,
+% tdmpc/fair_v1*.md, pilot_300s/final_report.md, normalised_score.md,
+% noise/noise_v1.md, feed_noise.md, noise_training.md,
+% vm_week_2026-11-04_13.md. Sections 6.1-6.7 are exploratory; 6.8 is the
+% confirmatory result of the registered protocol.
+Sections~\ref{sec:mill-runs}--\ref{sec:mill-champions} are exploratory: their
+champions were selected on the development and validation batteries they are
+compared on, the method changed between runs, and there are at most three runs
+per setting, with no significance test. They show what the method does and
+chose the registered settings. The confirmatory comparison on the sealed test
+battery is Section~\ref{sec:mill-sealed}. All results are at 300~s decisions
+unless stated. Scores are means over a battery (lower is better), rewards the
+TD-MPC's reward averaged over the battery (higher is better, at most 1), and
+the number of terminal episodes is given in parentheses.
 
 \section{Training runs: what the search found and what it cost}
 \label{sec:mill-runs}
-\TODO{The runs and their cost: \texttt{v4\_low\_run1--3} (60~s), \texttt{pilot\_300s}
-(12 generations, prompt version~5), \texttt{protocol\_run1--2} (v5),
-\texttt{explore\_run1--3} (v6, US\$3.23--3.62), and the eight registered
-protocol runs. One table: run, prompt version, interval, generations,
-promotions, cost, final development score.}
-\TODO{Figure: champion score per generation for each 300~s run (plotting
-script still to be written).}
-\TODO{What the LLM found: the levers (mill speed to about 12~rpm for energy,
-cyclone pressure for level, sump density for P80); trial outcomes (e.g.\
-pilot: 9 promoted, 15 rollbacks of 36); lines kept per candidate (median
-98\%: runs polish their first design).}
-\TODO{Spread (preview of C3): v5 runs 67.0--76.2 on development, reward
-0.76--0.92, set by the early mill-speed choice; v6 spread 1.7 points; the
-regression guard can block progress from a bad start.}
-
-\section{Main comparison at 300 s}
-\label{sec:mill-main}
-% RQ1, exploratory. Sources: mill docs/tdmpc/fair_v1_pilot_300s_gen12.md,
-% docs/explore_runs/fair_v1_explore_runs.md, docs/normalised_score.md.
-\TODO{Main table: champions, TD-MPC, decentralised PI and fixed recipe at
-300~s; score / reward / normalised score on the three batteries, terminal
-episodes in parentheses. The numbers are in THESIS\_GUIDE.md, Section~6.2.}
-
-\subsection{From several perspectives}
-\label{sec:mill-perspectives}
-\TODO{The score split into its terms, one row per controller: P80 outside
-range (and P80 IAE, reported), level band, circulating-load band and distance
-from 500\%, safety, energy (kWh/t), setpoint travel (reported), plus the
-control penalty. Which objective each controller gains or loses on.}
-
-\subsection{Where the differences are}
-\label{sec:mill-where}
-\TODO{Steady and step scenarios against ramp and sine scenarios (the
-TD-MPC's gap is mostly in ramps and sines, outside its constant-feed
-training); per disturbance kind; per-scenario paired differences (figure: one
-dot per scenario).}
-\TODO{One trajectory figure: one development scenario, champion against
-TD-MPC (level, P80, setpoints).}
-
-\section{Beyond the development range}
-\label{sec:mill-beyond}
-% RQ2, exploratory.
-\TODO{Degradation from development to beyond range on both measures;
-terminal episodes; what fails (mostly the sump-level band, then P80), per
-kind and pattern. Degradation against amplitude (1, 1.25, 1.5, 2) comes from
-the sealed battery (Section~\ref{sec:mill-sealed}); until then, development
-against beyond.}
-
-\subsection{Failure modes}
-\label{sec:mill-failure-modes}
-\TODO{Catalogue of failure modes (C2), each with one example trajectory; an
-empirical operating envelope for the LLM supervisor.}
-
-\section{Score and reward disagree on the sump level}
-\label{sec:mill-reward}
-\TODO{Source: mill \texttt{docs/explore\_runs/reward\_terms\_v1.md}. The score
-charges nothing inside 70--80\%; the reward's level term costs about 8\% at
-1\% off 75\% and 26\% at 2\%. Champions with the same score differ in reward
-by how tightly they hold 75\%. Level is the largest reward loss for every
-controller beyond range. Figure: reward split by term per controller. This is
-a result, not a footnote: it explains every case where a champion wins on
-score but loses on reward.}
-
-\section{Decision interval}
-\label{sec:mill-interval}
-\TODO{Every controller is tuned to its own rate. One table with intervals as
-rows (60, 300, 900~s) for the TD-MPC, the 300~s champions and the 60~s
-champions (mill \texttt{docs/tdmpc/fair\_v1.md}, \texttt{fair\_v1\_900.md},
-\texttt{fair\_v1\_pilot\_300s\_gen12.md}): the TD-MPC at 900~s falls to near
-PI level; the 300~s pilot beats it at 300 and 900~s and does not break at
-60~s. The 60~s comparison below was the first, exploratory one; keep it as
-this variant, shortened.}
-
-\paragraph{First comparison with the TD-MPC, at 60~s (exploratory).} The comparison was run on
-2026-10-31 with the champions of three independent LLM training runs after
-eight generations, on 28 development, 28 validation and 24 beyond-range
-scenarios of two hours each (Table~\ref{tab:mill-tdmpc}).
+Table~\ref{tab:mill-runs} lists the training runs at 300~s, all with Claude
+Opus 5.5 at effort low, three candidates per generation and 12 generations.
+A run costs US\$3.2--3.9 and about 2.5~hours on one machine.
 
 \begin{table}[tb]
   \centering
-  \caption{The LLM champions against Weir's TD-MPC on the grinding circuit,
-    with the decision interval of each row. Mean score (lower is better) /
-    mean TD-MPC reward (higher is better, at most 1) per battery; in
-    parentheses the number of episodes in which the sump overflowed or ran
-    dry. The fixed recipe does not act.}
-  \label{tab:mill-tdmpc}
-  \small\setlength{\tabcolsep}{4pt}
+  \caption{Exploratory training runs at 300~s (12 generations, Opus 5.5,
+    effort low). Development score of the final champion.}
+  \label{tab:mill-runs}
+  \small
+  \begin{tabular}{@{}llrr@{}}
+    \toprule
+    Run & Prompt version & Cost (US\$) & Development \\
+    \midrule
+    \texttt{pilot\_300s}     & 5 (one champion) & 3.85 & 67.0 \\
+    \texttt{protocol\_run1}  & 5 & -- & 70.0 \\
+    \texttt{protocol\_run2}  & 5 & -- & 76.2 \\
+    \texttt{explore\_run1}   & 6 (explore, exploit) & 3.40 & 69.5 \\
+    \texttt{explore\_run2}   & 6 & 3.62 & 67.8 \\
+    \texttt{explore\_run3}   & 6 & 3.23 & 67.9 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\TODO{Fill the costs of protocol\_run1--2; add the eight registered protocol
+runs when done. Mention the earlier 60~s runs (v4, mill
+\texttt{docs/repeated\_runs\_v4.md}) in one sentence.}
+
+\paragraph{How a run progresses.} The pilot's development score fell from
+2\,754.7 (the fixed recipe) to 175.3 after the first generation and then in
+eight smaller steps to 67.0. Of its 36
+candidates, 9 were promoted, 15 rolled back by the guard, 11 not selected and 1
+rejected on validation. After the first generation nearly every candidate kept
+94--100\% of the champion's lines (median 98\%): a run polishes the design it
+finds first.
+\TODO{Figure: champion development score per
+generation for every 300~s run (data in each run's \texttt{final\_report.md}
+and \texttt{summary.csv}; plotting script to write).}
+
+\paragraph{What the LLM found.} Every good champion uses the same levers: the
+mill speed below 13~rpm for energy (lowering it from 13 to 12~rpm cuts mill
+power by about 0.5~MW), the sump density setpoint to correct P80 and the sump
+level together, and an opposite cyclone-pressure move to keep the level steady
+while P80 is corrected. The lessons the LLM kept are statements about the
+plant, for example that ``lighter ore both coarsens P80 and lowers the sump
+level, so lowering sump density fixes both at once''.
+
+\paragraph{Spread between runs.} With prompt version~5, runs with the same
+settings ended far apart (development 67.0--76.2, reward 0.76--0.92), set by
+how early they lowered the mill speed. Version~6 explores three lineages
+(energy, level and quality priorities) for four generations before exploiting
+the best; its three runs spread by 1.7 points on development against 6.2--9.2
+for version~5, and every version~6 champion has a higher reward than both
+version~5 protocol runs. The quality lineage was chosen in all three.
+Continuing the version~6 runs to 16 generations gained 0.8--1.9\% for two of
+them and nothing for the third, and an explore phase at high effort cost twice
+as much without a gain. These results chose the registered settings: version~6,
+12 generations, effort low.
+
+\section{Main comparison at 300 s}
+\label{sec:mill-main}
+Table~\ref{tab:mill-main} compares the champions with the TD-MPC and the
+baselines. The four best champions score lower than the TD-MPC on every
+battery. On the TD-MPC's own reward, \texttt{pilot\_300s},
+\texttt{explore\_run1} and \texttt{explore\_run2} are higher everywhere;
+\texttt{explore\_run3} is slightly lower on development (0.876 against 0.887)
+and validation (0.854 against 0.856), and the version~5 run
+\texttt{protocol\_run1} is lower on every battery. The largest
+differences are beyond the range and on validation, where the TD-MPC's score
+rises to 111.6 against 66.8--76.3 for the champions. No champion has a
+terminal episode on any of the three batteries; the TD-MPC has three beyond
+the range.
+
+\begin{table}[tb]
+  \centering
+  \caption{Main comparison at 300~s: score / reward / normalised score per
+    battery (normalised score where computed). Exploratory: the champions were
+    selected on these batteries.}
+  \label{tab:mill-main}
+  \footnotesize\setlength{\tabcolsep}{2pt}
   \begin{tabular}{@{}llll@{}}
     \toprule
     Controller & Development & Validation & Beyond \\
     \midrule
-    LLM run 1 (60~s)         & 65.3 / 0.980 & 66.9 / 0.966 & 98.4 / 0.893 \\
-    LLM run 2 (60~s)         & 65.0 / 0.876 & 65.3 / 0.878 & 138.5 / 0.732 \\
-    LLM run 3 (60~s)         & 63.5 / 0.870 & 83.1 / 0.831 & 148.4 / 0.784 \\
-    TD-MPC (300~s)           & 72.5 / 0.887 & 111.6 / 0.856 & 662.7 / 0.656 (3) \\
-    TD-MPC (60~s)            & 69.3 / 0.922 & 80.4 / 0.891 & 190.8 / 0.729 \\
-    Decentralised PI (60~s)  & 184.4 / 0.605 (1) & 112.4 / 0.663 & 897.3 / 0.347 (2) \\
-    Fixed recipe             & 2754.7 / 0.188 (18) & 2712.2 / 0.187 (16) & 4310.4 / 0.118 (21) \\
+    \texttt{pilot\_300s}    & 67.0 / 0.922 / 0.904 & 66.8 / 0.920 / 0.905 & 194.1 / 0.725 / 0.810 \\
+    \texttt{explore\_run1}  & 69.5 / 0.899         & 68.2 / 0.894         & 153.0 / 0.760 \\
+    \texttt{explore\_run2}  & 67.8 / 0.931         & 67.0 / 0.924         & 151.0 / 0.770 \\
+    \texttt{explore\_run3}  & 67.9 / 0.876         & 76.3 / 0.854         & 232.4 / 0.701 \\
+    \texttt{protocol\_run1} & 70.0 / 0.761         & 78.0 / 0.764         & 238.2 / 0.605 \\
+    TD-MPC                  & 72.5 / 0.887 / 0.881 & 111.6 / 0.856 / 0.854 & 662.7 / 0.656 / 0.704 (3) \\
+    Decentralised PI        & 474.4 / 0.513 / 0.693 (1) & 189.9 / 0.583 / 0.755 & 1851.2 / 0.281 / 0.483 (7) \\
+    Fixed recipe            & 2754.7 / 0.188 / 0.384 (18) & 2712.2 / 0.187 / 0.409 (16) & 4310.4 / 0.118 / 0.231 (21) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\TODO{Normalised scores of the explore and protocol runs: run the
+normalised report on the VM's stored episodes (no API calls).}
+% python scripts/normalised_report.py runs/benchmark/fair_v1_explore_runs.csv --intervals 300
+
+\subsection{By objective}
+\label{sec:mill-perspectives}
+Table~\ref{tab:mill-terms} splits the development score into its objectives.
+Energy is 63.5--65.0 points of every good controller's score (6.35--6.50
+kWh/t) and the differences between them are small; the TD-MPC uses slightly
+more. The control penalty, what is left without energy, is 3.3--4.7 for the
+champions against 7.5 for the TD-MPC, mostly from the sump-level band (4.64
+weighted points against 0.6--1.0). On validation the TD-MPC's level-band term
+rises to 35.6 and its P80 term to 3.7, against at most 8.4 and 0.5 for the
+champions. Beyond the range, the level band and safety dominate every
+controller's control penalty.
+
+\begin{table}[tb]
+  \centering
+  \caption{Development score split by objective (weighted points, so the
+    columns add up to the score), and the specific energy.}
+  \label{tab:mill-terms}
+  \small\setlength{\tabcolsep}{3pt}
+  \begin{tabular}{@{}lrrrrrrrr@{}}
+    \toprule
+    Controller & Score & P80 & Level & CL band & Safety & Energy & CL target & kWh/t \\
+    \midrule
+    \texttt{pilot\_300s}   & 67.0 & 0.50 & 0.64 & 0.93 & 0 & 63.70 & 1.23 & 6.37 \\
+    \texttt{explore\_run1} & 69.5 & 1.26 & 1.04 & 0.93 & 0 & 64.85 & 1.47 & 6.49 \\
+    \texttt{explore\_run2} & 67.8 & 1.50 & 0.75 & 0.93 & 0 & 63.53 & 1.14 & 6.35 \\
+    \texttt{explore\_run3} & 67.9 & 0.65 & 0.68 & 0.93 & 0 & 64.36 & 1.26 & 6.44 \\
+    TD-MPC                 & 72.5 & 0.48 & 4.64 & 0.93 & 0 & 65.02 & 1.47 & 6.50 \\
+    Decentralised PI       & 474.4 & 9.58 & 154.04 & 10.14 & 228.57 & 69.29 & 2.80 & 6.93 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\TODO{Same split for validation and beyond (in the source docs), or in an
+appendix. Add P80 IAE from the target and setpoint travel as reported,
+unscored measures (mill \texttt{docs/tdmpc/fair\_v1\_metrics.md}).}
+
+\subsection{Where the differences are}
+\label{sec:mill-where}
+The TD-MPC was trained on constant feed, and its gap is in the scenarios that
+vary the feed over time. On validation it scores 71.2 on the steady and step
+scenarios, about as the champions (68.1--70.4), but 142.0 on ramps and sines,
+against 65.4--80.7. Beyond the range its ramp and sine score is 892.3.
+\TODO{Per-scenario paired differences (figure: one dot per scenario,
+champion minus TD-MPC, score and reward). One trajectory figure: a
+development scenario, champion against TD-MPC (level, P80, setpoints).}
+
+\section{Beyond the development range}
+\label{sec:mill-beyond}
+From development to beyond, the champions' scores rise by a factor of
+2.2--3.4 and their rewards fall by 0.14--0.20; the TD-MPC's score rises by a
+factor of 9.1 and its reward falls by 0.23, with three terminal episodes. What
+fails is mostly the sump-level band (65.9--132.8 weighted points for the
+champions beyond the range, 86.1 for the TD-MPC) and then P80; the TD-MPC also
+pays 454.6 points of safety from its terminal episodes, the champions none.
+\TODO{Per kind and pattern. The degradation against amplitude (1, 1.25, 1.5,
+2) comes from the sealed battery (Section~\ref{sec:mill-sealed}).}
+
+\subsection{Failure modes}
+\label{sec:mill-failure-modes}
+\TODO{Catalogue of failure modes (C2), each with one example trajectory, and
+an empirical operating envelope for the LLM supervisor.}
+
+\section{Score and reward disagree on the sump level}
+\label{sec:mill-reward}
+The score charges nothing while the sump level is inside 70--80\%. The
+reward's level factor is a narrow bell around 75\%: 1\% off costs about 8\% of
+its multiplicative part, 2\% off about 26\%. Champions with almost the same
+score therefore differ in reward by how tightly they hold 75\%
+(Table~\ref{tab:mill-reward-terms}): on development \texttt{explore\_run2}
+holds the level 0.6\% from 75\% on average and loses 0.058 reward to the level,
+\texttt{explore\_run3} 1.0\% and 0.095, and the version~5 run
+\texttt{protocol\_run1} 1.3\% and 0.142. Beyond the range the level is the
+largest reward loss for every champion. The trainer promotes on the score, so
+this is not selected for. This explains every case in
+Table~\ref{tab:mill-main} where a champion wins on score and loses on reward.
+
+\begin{table}[tb]
+  \centering
+  \caption{The TD-MPC's reward split by term on the development battery:
+    reward gained if that term alone were perfect, and the mean distance of
+    the sump level from 75\%.}
+  \label{tab:mill-reward-terms}
+  \small
+  \begin{tabular}{@{}lrrrrr@{}}
+    \toprule
+    Controller & Reward & P80 & Level & CL & Level off 75\% \\
+    \midrule
+    \texttt{pilot\_300s}    & 0.922 & 0.024 & 0.062 & 0.047 & 0.7\% \\
+    \texttt{explore\_run1}  & 0.899 & 0.023 & 0.062 & 0.061 & 0.8\% \\
+    \texttt{explore\_run2}  & 0.931 & 0.020 & 0.058 & 0.045 & 0.6\% \\
+    \texttt{explore\_run3}  & 0.876 & 0.027 & 0.095 & 0.050 & 1.0\% \\
+    \texttt{protocol\_run1} & 0.761 & 0.042 & 0.142 & 0.079 & 1.3\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\TODO{Add the TD-MPC's row (run \texttt{scripts/reward\_terms.py} for it) and
+a figure of the reward split per controller.}
+
+\section{Decision interval}
+\label{sec:mill-interval}
+Every controller does best at the interval it was developed for
+(Table~\ref{tab:mill-interval}). Champions trained at 60~s beat the TD-MPC at
+60~s and degrade at 300~s; the champion trained at 300~s beats it at 300~s and
+900~s and stays usable at 60~s. At 900~s the TD-MPC falls to near the level of
+the decentralised PI, with seven terminal episodes on development.
+
+\begin{table}[tb]
+  \centering
+  \caption{Development battery at three decision intervals: score / reward
+    (terminal episodes). \texttt{v4\_low\_run1} is the best of three champions
+    trained at 60~s.}
+  \label{tab:mill-interval}
+  \small\setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    Controller & 60~s & 300~s & 900~s \\
+    \midrule
+    \texttt{pilot\_300s} (trained at 300~s) & 89.0 / 0.833 & 67.0 / 0.922 & 441.9 / 0.678 (1) \\
+    \texttt{v4\_low\_run1} (trained at 60~s) & 65.3 / 0.980 & 82.9 / 0.885 & 580.2 / 0.651 (3) \\
+    TD-MPC (trained at 300~s)              & 69.3 / 0.922 & 72.5 / 0.887 & 1119.6 / 0.585 (7) \\
+    Decentralised PI                       & 184.4 / 0.605 (1) & 474.4 / 0.513 (1) & 1182.2 / 0.460 (5) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\TODO{Validation and beyond columns, or a second table; the other two 60~s
+champions (development 65.0 and 63.5 at 60~s, 125.1 and 331.7 at 300~s).}
+
+\section{Robustness to noise}
+\label{sec:mill-noise-results}
+Table~\ref{tab:mill-noise-results} gives the development reward under each
+noise category of Section~\ref{sec:mill-noise}, and
+Table~\ref{tab:mill-noise-beyond} the terminal episodes beyond the range.
+Under feed fluctuations every champion keeps a higher reward than the TD-MPC on
+every battery; under measurement noise \texttt{explore\_run2} falls below it.
+
+\begin{table}[tb]
+  \centering
+  \caption{Development reward by noise category (one draw per scenario).
+    \texttt{noise\_run1--2} were trained under plant measurement noise (prompt
+    version~7) and are tested on fresh draws.}
+  \label{tab:mill-noise-results}
+  \small
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    Controller & None & Measurement & Feed & Feed + measurement \\
+    \midrule
+    \texttt{explore\_run1} & 0.899 & 0.682 & 0.692 & 0.586 \\
+    \texttt{explore\_run2} & 0.931 & 0.529 & 0.695 & 0.480 \\
+    \texttt{explore\_run3} & 0.876 & 0.782 & 0.658 & 0.620 \\
+    \texttt{noise\_run1}   & 0.801 & 0.757 & 0.629 & 0.614 \\
+    \texttt{noise\_run2}   & 0.890 & 0.779 & 0.677 & 0.641 \\
+    TD-MPC                 & 0.887 & 0.653 & 0.610 & 0.500 \\
+    Decentralised PI       & 0.513 & 0.481 & 0.322 & 0.300 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-All three champions score better than the TD-MPC on every battery, except
-run~3 on validation against the TD-MPC at 60~s. On the TD-MPC's own reward,
-only run~1 is better everywhere. Runs~2 and~3 lose on the development and
-validation batteries: the score only penalises a P80 outside its range of
-180--200~$\mu$m, while the reward pulls the P80 towards the target, and run~2
-holds it about twice as far from the target as the TD-MPC (an integrated
-absolute error of 10.3 against 4.3--5.1~$\mu$m$\cdot$h on development). Beyond
-the training range every champion is better on both measures. The decision
-interval matters for every controller. At 300~s the champions degrade
-strongly (development scores of 82.9, 125.1 and 331.7, and two to nine beyond
-episodes in which the sump overflows or runs dry) and fall behind the TD-MPC
-on development, and the decentralised PI degrades from 184.4 to 474.4. The
-TD-MPC itself scores better at 60~s than at the 300~s it was trained for.
-Its gap to the champions is mostly in the ramp and sine scenarios, outside
-its training distribution: at 300~s on validation it scores 71.2 on steady
-and step scenarios against 66.0--68.9 for the champions, but 142.0 on ramps
-and sines against 64.8--95.7. Energy per tonne of ore makes up 90--98\% of
-every good score and differs little between the controllers; the
-differences are in the sump-level band, the P80 and, at 300~s, safety.
+\begin{table}[tb]
+  \centering
+  \caption{Terminal episodes on the beyond battery (24 scenarios) by noise
+    category.}
+  \label{tab:mill-noise-beyond}
+  \small
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    Controller & None & Measurement & Feed & Feed + measurement \\
+    \midrule
+    \texttt{explore\_run1} & 0 & 1 & 0 & 5 \\
+    \texttt{explore\_run2} & 0 & 1 & 0 & 2 \\
+    \texttt{explore\_run3} & 0 & 1 & 0 & 1 \\
+    TD-MPC                 & 3 & 6 & 7 & 11 \\
+    Decentralised PI       & 7 & 10 & 11 & 16 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-\section{Robustness to noise}
-\label{sec:mill-noise-results}
-% RQ2 quantified by noise category (Section sec:mill-noise): rows = noise
-% category / amplitude / temporal structure, columns = controllers.
-% Sources: mill docs/noise/noise_v1.md, docs/feed_noise.md,
-% docs/noise_training.md, docs/vm_week_2026-11-04_13.md (sections 3, 5-7).
-\TODO{Main table: reward (and score) per controller and noise category (none,
-P80 white, P80 analyser, plant-wide measurement, feed fluctuations, feed plus
-measurement) on the development battery; terminal episodes. If time allows,
-an amplitude sweep within one category so that RQ2's noise axis is a curve,
-not a point.}
+\subsection{Measurement noise on P80}
+The TD-MPC does not read the measured P80, so P80 noise leaves it unchanged.
+The champion \texttt{pilot\_300s} barely moves: development 67.0 / 0.922
+without noise, 68.2 / 0.914 with Gaussian noise of 5~$\mu$m and 71.1 / 0.892
+with the analyser model.
 
-\subsection{Measurement noise}
-\TODO{P80 noise does not reach the TD-MPC (it does not read P80); the
-champions barely move. Plant-wide measurement noise reverses the noise-free
-ranking: \texttt{explore\_run2} (best without noise, reward 0.931) becomes the
-worst champion (0.529), \texttt{explore\_run3} the most robust (0.782). The
-cause is one line: a level trend from two samples 60~s apart; a 5-minute
-least-squares slope lifts its noisy reward to 0.706 and lowers its clean one
-to 0.834.}
+\subsection{Measurement noise on every signal}
+Plant-wide measurement noise reverses the noise-free ranking of the champions.
+\texttt{explore\_run2}, the best without noise (reward 0.931), becomes the
+worst champion (0.529), and \texttt{explore\_run3}, the weakest, the most
+robust (0.782). The cause in \texttt{explore\_run2} is one line: it estimates
+the sump-level trend from two samples 60~s apart. Replacing only that line with
+a 5-minute least-squares slope lifts its development reward under noise from
+0.529 to 0.706 and lowers it without noise from 0.931 to 0.834. Selecting on
+noise-free scenarios does not select for robustness, as on the tank test bed
+(Section~\ref{sec:dev-lessons}).
 
 \subsection{Feed fluctuations}
-\TODO{\texttt{feed15} hurts every controller, the TD-MPC most (beyond: 3, 7
-and 11 terminal episodes for none, feed, and feed plus measurement); every
-champion keeps a higher reward than the TD-MPC under every noise.}
+Fluctuating feed hurts every controller, the TD-MPC most: its development
+reward falls from 0.887 to 0.610, and its terminal episodes beyond the range
+from 3 to 7, against none for the champions. Under feed fluctuations alone the
+champions trained without noise do best. Adding measurement noise on top
+separates them again, as without feed fluctuations.
 
 \subsection{Training under noise}
-\TODO{Exploratory only, outside the protocol: prompt version~7 makes
-champions insensitive to measurement noise but not clearly better than the
-most robust noise-free champion.}
+Two runs trained under plant measurement noise (prompt version~7, outside the
+protocol) became insensitive to it, but not clearly better than the most robust
+noise-free champion, and training on measurement noise bought nothing against
+feed fluctuations.
 
 \subsection{Measuring under noise}
-\TODO{One draw per scenario is not enough (one scenario's score doubled
-between draws); paired and fresh draws. Fairness caveat: the TD-MPC was also
-trained without noise.}
+One noise draw per scenario is not enough for a close comparison: one
+scenario's score doubled between draws (66.6 to 140.3). A champion trained
+under noise must be tested on fresh draws.
+\TODO{Fairness caveat in one sentence: the TD-MPC was trained without noise,
+and Weir's feed generator could randomise its training feed. An amplitude
+sweep within one category would make RQ2's noise axis a curve
+(Section~\ref{sec:mill-noise}).}
 
 \section{The generated supervisors}
 \label{sec:mill-champions}
-\TODO{What a champion looks like: length (\texttt{pilot\_300s}: 125 lines),
-structure (level-trend estimator driving the pressure setpoint, ore-density
-feedforward, P80 trim of the density setpoint, cyclone count, mill speed fixed
-near 11.8~rpm for energy), rule count (the goal document's complexity
-measure; count branches and thresholds per champion), and readability (terse
-names and few comments compared with the coordination champion). The full
-listing is in Appendix~\ref{app:mill-champion}.}
+A champion is a single deterministic Python function. \texttt{pilot\_300s} has
+125 lines; the version~6 champions have 62--85. The pilot's structure is a
+level-trend estimator that drives the cyclone pressure setpoint, an
+ore-density feedforward and a P80 trim on the sump density setpoint, a rule for
+the number of cyclones, and the mill speed held near 11.8~rpm for energy. The
+full listing is in Appendix~\ref{app:mill-champion}.
+\TODO{Rule count per champion (the goal document's complexity measure: count
+branches and thresholds; cheap to script). Readability, honestly: the mill
+champions use terse names and few comments. The \texttt{explore\_run2}
+diagnosis above is the best evidence that the code can be inspected and fixed.}
 
 \section{Confirmatory comparison on the sealed test battery}
 \label{sec:mill-sealed}
 % Filled in after the eight protocol runs and the one sealed evaluation
 % (Section sec:protocol). All tests at alpha = 0.05.
-\TODO{After the protocol runs. If they are not run, this section becomes a
-list of what the exploratory results can and cannot claim (champions selected
-on development and validation; few runs per setting; no significance test;
-validation in the promotion rule; TD-MPC trained on constant feed for another
-reward).}
+\TODO{After the eight protocol runs. If they are not run, this section becomes
+a list of what the exploratory results can and cannot claim (champions
+selected on development and validation; three runs per setting; no
+significance test; validation in the promotion rule; TD-MPC trained on
+constant feed for another reward).}
 
 \subsection{$H_{0,1}$: within the development range}
 \TODO{Mean paired difference LLM minus TD-MPC on \texttt{test\_dev} with 95\%
 intervals, score and reward (co-primary); equivalence (TOST, 90\% interval
-within $\pm 3.5$ score, $\pm 0.02$ reward); Cohen's $d_z$ with its interval,
+within $\pm 3.5$ score and $\pm 0.02$ reward); Cohen's $d_z$ with its interval,
 descriptive.}
 
 \subsection{$H_{0,2}$: degradation beyond the range}
@@ -207,15 +370,16 @@ amplitude for each controller; the unseen sine periods.}
 chi-square interval, runs without a promotion.}
 
 \subsection{Secondary analyses}
-\TODO{Per metric (P80 outside range, P80 IAE, level band, CL band, safety,
+\TODO{Per objective (P80 outside range, P80 IAE, level band, CL band, safety,
 travel, energy, CL target) with Holm-corrected $p$-values; per kind and
-pattern; steady/step against ramp/sine; the 60 and 900~s and noise variants.}
+pattern; steady/step against ramp/sine; the 60~s, 900~s and noise variants.}
 
 \section{Summary}
 \label{sec:mill-summary}
-\TODO{What we learned (guide): an LLM-written deterministic supervisor of
-about 100 lines can match or beat the deployed TD-MPC on this simulator at its
-own decision interval, degrades more gracefully beyond range and under noise
-(fewer terminal episodes), but the result depends on the run (spread), the
-metric (score against reward on the level) and the conditions (noise reverses
-rankings). Update with the sealed-test result.}
+\TODO{Rewrite after the sealed test. Exploratory so far: an LLM-written
+deterministic supervisor of 60--130 lines matches or beats the deployed TD-MPC
+on this simulator at its own decision interval, on both measures for most
+runs, and fails more gracefully beyond the range and under noise (fewer
+terminal episodes). The result depends on the run (spread), the measure (score
+against reward on the sump level) and the conditions (noise reverses the
+ranking among champions).}
