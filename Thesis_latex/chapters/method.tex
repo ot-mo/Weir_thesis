@@ -1,15 +1,22 @@
-\chapter{Method}
+\chapter{Method: the synthesis framework}
 \label{ch:method}
+% Purpose (THESIS_GUIDE.md, Ch. 3): the method as it runs on the grinding
+% circuit, described generally enough to be applied to another plant (no
+% changes fitted to this mill). Tank-era differences in one paragraph.
+% Framing: each piece exists because something failed without it; point
+% forward to Chapter ch:tanks (tanks) and Section sec:mill-runs (mill).
+% Target length 10-12 pages.
 This chapter describes the method as it is implemented: the architecture, the
 interface between the generated code and the process, the checks around that
 code, how candidates are scored and promoted, the training loop, the language
 models, the comparators and the pre-registered protocol for the comparison.
 The grinding circuit itself is described in Chapter~\ref{ch:mill}. Parts
-of the method were developed on the test beds of Chapters~\ref{ch:toy}
-and~\ref{ch:coord}; where a part was added in response to a failure, that
+of the method were developed on the tank test beds of
+Chapter~\ref{ch:tanks}; where a part was added in response to a failure, that
 chapter tells why.
 
 \section{Three-layer architecture}
+\label{sec:architecture}
 The framework separates real-time execution from high-level reasoning in
 three layers (Figure~\ref{fig:architecture}).
 \begin{description}
@@ -17,10 +24,9 @@ three layers (Figure~\ref{fig:architecture}).
   loops track the active setpoints at a sub-second rate and are never
   generated or modified by the LLM.
 \item[Executable heuristic supervisor] A deterministic Python function that
-  runs locally at a slower rate: every 60~s in the grinding circuit and every
-  3--10~s on the tank test beds. It reads a window of recent telemetry and
-  updates the setpoints; in the fault-detection test beds it also raises one
-  anomaly flag per loop.
+  runs locally at a slower rate: every 300~s in the main grinding-circuit
+  comparison and every 3--10~s on the tank test beds. It reads a window of
+  recent telemetry and updates the setpoints.
 \item[LLM meta-supervisor] Runs offline. It reads logs of the supervisor's
   performance in simulation and synthesizes new code for the supervisor. It
   is the only layer that calls the LLM's API.
@@ -39,39 +45,27 @@ layers take the place of the TD-MPC supervisory controller.
   \caption{The three-layer architecture, shown for the grinding circuit. The
     LLM meta-supervisor works offline on logged data and synthesizes
     heuristic code, which the executable supervisor runs locally without API
-    calls. On the tank test beds, the process is a simulation and the
-    supervisor runs every 3--10~s.}
+    calls.}
   \label{fig:architecture}
 \end{figure}
+\TODO{Check that the figure's labels say 300~s (main comparison), not 60~s.}
 
 \section{Supervisor interface}
 \label{sec:interface}
 Every supervisor is a single Python function that is called at a fixed
 decision interval. It is stateless: it is reloaded for every episode, keeps
 nothing between calls and sees only its arguments, so its behaviour is fully
-determined by the telemetry it is given. Two variants are used.
-\begin{description}
-\item[Fault detection] On the leak test beds of Chapter~\ref{ch:toy}, the
-  function is
-  \begin{center}
-  \texttt{supervise(telemetry\_window, active\_setpoints, nominal\_targets)}.
-  \end{center}
-  The telemetry window holds, for each controlled tank
-  and each sample, the level, the output of the loop regulating it (pump
-  effort) and the control error. The function returns a free-text diagnosis,
-  one adjusted setpoint per loop and one boolean anomaly flag per loop. The
-  returned flags are held until the next decision.
-\item[Setpoint coordination] On the coordination test bed of
-  Chapter~\ref{ch:coord} and on the grinding circuit, the function is
-  \begin{center}
-  \texttt{supervise(telemetry\_window, active\_setpoints, objectives)}
-  \end{center}
-  and returns a diagnosis and the new setpoints, without anomaly flags. The
-  window holds every logged signal together with the setpoints and targets
-  that were in force at each sample, as a distributed control system logs
-  them, so that the supervisor can see its own earlier moves. The objectives
-  hold the targets, the constraint bands and the setpoint limits.
-\end{description}
+determined by the telemetry it is given. On the grinding circuit the function is
+\begin{center}
+\texttt{supervise(telemetry\_window, active\_setpoints, objectives)}
+\end{center}
+and returns a diagnosis and the new setpoints. The
+window holds every logged signal together with the setpoints and targets
+that were in force at each sample, as a distributed control system logs
+them, so that the supervisor can see its own earlier moves. The objectives
+hold the targets, the constraint bands and the setpoint limits. The first
+tank test beds used a fault-detection variant that also returns one anomaly
+flag per loop (Appendix~\ref{app:tanks}).
 
 \section{Security sandbox}
 \label{sec:sandbox}
@@ -91,13 +85,12 @@ on any telemetry:
   global interpreter lock and slows the simulator to a crawl.
 \end{enumerate}
 An exception or timeout during evaluation is recorded as a failure and the
-setpoints are held; in the fault-detection variant both anomaly flags are
-also raised. The same sandbox is used on every test bed and on the grinding
-circuit.
+setpoints are held. The same sandbox is used on every test bed and on the
+grinding circuit.
 
 \section{Safety wrapper}
 \label{sec:wrapper}
-In the coordination test bed and the grinding circuit, a fixed, human-written
+A fixed, human-written
 wrapper sits between every supervisor and the loops, generated or not, so
 that safety does not depend on code the LLM wrote. A later generation could
 otherwise delete its own rate limit, and an early version clamped a NaN
@@ -121,42 +114,11 @@ Each candidate is simulated in closed loop on fixed, seeded batteries of
 scenarios, and each scenario $s$ gets a score $J_s$ that is a weighted sum of
 penalties. The battery score $J$ is the average of $J_s$ over the scenarios;
 lower is better.
-
-\subsection{Fault detection score}
-On the leak test beds the scenarios are a fault-free run, single leaks of
-different onset, size and duration, simultaneous leaks, persistent severe
-leaks and, for the single- and two-tank processes, sensor noise. The score is
-\begin{equation}
-  J_s = \mathrm{IAE}_s + 500\,V_s + 300\,M_s + c_{\mathrm{FP}}\,F_s
-        + 10^4\,E_s + 200\,R_s ,
-  \label{eq:score}
-\end{equation}
-where $\mathrm{IAE}_s$ is the integrated absolute tracking error of all
-loops, $V_s$ the number of samples outside the safety bounds, $M_s$ and $F_s$
-the number of samples, summed over loops, in which a held anomaly flag
-disagrees with the true fault state (missed anomalies and false positives),
-$E_s$ the number of exceptions and timeouts, and $R_s$ the distance between
-the final and the nominal setpoints for loops whose fault has cleared. A
-false positive on a loop that never faults in the scenario costs
-$c_{\mathrm{FP}} = 800$ (250 on the quadruple-tank process); otherwise
-$c_{\mathrm{FP}} = 160$. Without this asymmetry, flagging constantly was a
-cheap way to avoid missed anomalies. For the quadruple-tank process an
-\emph{oracle} is also evaluated. It sets each flag to the true fault state at
-every decision and keeps the nominal setpoints, which is the best detection
-possible at the given decision interval, so that a plateau caused by the
-search can be told from one caused by the test bed.
-
-\subsection{Setpoint coordination score}
-For setpoint coordination, the score has one term per objective of the
-research questions: the integrated absolute error of the product variable
-(production rate or P80), the seconds with the level outside its band and
-with the circulating load (or its analog) outside its limits, the seconds
-outside the safety bounds, the total variation of the setpoints, and a large
-penalty per exception or timeout. The weights of the quadruple-tank version
-are given in Equation~\eqref{eq:coord-score} and those of the grinding
-circuit in Chapter~\ref{ch:mill}. The recovery time after each disturbance
-or target change, the time until the product variable settles within a
-tolerance of its target for good, is reported but not scored.
+\TODO{One general paragraph: one penalty term per objective (product quality,
+constraint bands, safety, energy where relevant), a large penalty per
+exception or timeout, terms reported but not scored. The grinding-circuit
+weights are in Section~\ref{sec:mill-score}; the tank scores are in
+Chapter~\ref{ch:tanks} and Appendix~\ref{app:tanks}.}
 
 \subsection{Batteries}
 \label{sec:batteries}
@@ -169,35 +131,38 @@ cell. The batteries have different roles:
 \item[Development] Disturbance amplitudes inside the development range.
   It drives promotion, and the LLM sees the champion's per-scenario results
   and decision traces on it.
-\item[Held-out] The same scenario types and ranges with another seed. It is
-  never used for promotion, and its score is shown to the LLM only as the
-  gap to the development score, as a warning against fitting the visible
-  scenarios.
+\item[Validation] The same scenario types and ranges with another seed. A
+  candidate must also pass it before it is promoted
+  (Section~\ref{sec:promotion}), so it is not a clean test.
 \item[Beyond] Amplitudes beyond the development range, never shown to the
   LLM and only reported. It tests RQ2 on a frozen policy.
 \item[Sealed test] A battery that is generated once, fingerprinted and opened
   only in the final evaluation of the protocol (Section~\ref{sec:protocol}),
   with every access logged.
 \end{description}
-Because the held-out gap is part of the prompt, the held-out battery is not a
-clean test; only the sealed battery is.
+\TODO{Say once that the tank test beds had a \emph{held-out} battery instead,
+used only as a gap shown in the prompt, never in promotion; ``validation''
+(grinding circuit) and ``held-out'' (tanks) are used consistently from here.}
 
 \subsection{Promotion}
+\label{sec:promotion}
 A candidate is promoted only if it improves the development score \emph{and}
-passes a regression guard. On the leak test beds the guard is per scenario: no
-single scenario may get worse than the champion by more than 5 points (the
-fault-free scenario) or the larger of 100 points and 15\% (fault scenarios).
-Averaging otherwise let a candidate win by breaking one scenario badly. For
-setpoint coordination this guard rejected almost every candidate
-(Section~\ref{sec:coord-loop}), and it was replaced by a guard per
-disturbance type with a schedule. The mean score of each disturbance type may
-get worse by at most the larger of 10 points and a relative tolerance, and no
-single scenario by more than the larger of an absolute and a relative cap.
+passes a regression guard. A plain average let a candidate win by breaking
+one scenario badly (Section~\ref{sec:tank-gaming}), and a guard per scenario
+rejected almost every candidate (Section~\ref{sec:tank-search}), so the guard
+works per disturbance type with a schedule. The mean score of each
+disturbance type may get worse by at most the larger of 10 points and a
+relative tolerance, and no single scenario by more than the larger of an
+absolute and a relative cap.
 The tolerances are loose in generations 1--2 (25\%, cap 300 points or 150\%),
 tighter in generations 3--4 (15\%, cap 200 points or 100\%) and tightest from
 generation 5 on (10\%, cap 100 points or 50\%). Promotion is elitist: the
 champion is replaced only by a better candidate, so the development score of
 the champion never increases.
+\TODO{Add the validation check before promotion used on the grinding circuit
+(mill commit ``Trainer: validation check before promotion''): what it checks
+and why (the held-out gap grew over the last coordination promotions).
+Check the tolerances above against \texttt{configs/supervisor.yaml}.}
 
 \section{Training loop}
 \label{sec:training-loop}
@@ -213,20 +178,20 @@ performs the following steps.
   the safety wrapper, the exact list of allowed built-in functions, the
   scoring rules and the promotion guard, the task and the output format. The
   part that changes contains the champion's source code, its per-scenario
-  results and held-out gap, one line per decision for its two worst-scoring
+  results and validation results, one line per decision for its two worst-scoring
   scenarios, the previous generation's non-promoted candidates with the
   decision trace of the scenario each lost most on, a measured record of the
   changes already tried, and a list of lessons learned.
-\item \emph{Sample $K$ candidates} from the LLM in parallel, with the same
+\item \emph{Sample $K = 3$ candidates} from the LLM in parallel, with the same
   prompt. Each response is a JSON object with a failure analysis, a numeric
   self-check of the proposed change, the new code and at most two new lessons
-  of at most 30 words each. In setpoint coordination each candidate must make
+  of at most 30 words each. Each candidate must make
   \emph{one targeted change} to the champion; the share of the champion's
   lines it keeps is logged.
 \item \emph{Check, load and score} every candidate on the development
   battery. A candidate that fails the security check or cannot be loaded is
   rejected without simulation. The best candidate is promoted if it passes
-  the guard, and the new champion is then scored on the held-out battery.
+  the guard and the validation check.
 \item \emph{Update the memory of the run.} Lessons are kept only from
   promoted candidates, at most twelve. Every other candidate is recorded by
   the trainer, not by the LLM, as one measured line: its proposed change, its
@@ -235,40 +200,64 @@ performs the following steps.
   change that was not promoted. A run seeded with another run's champion
   inherits that run's record.
 \end{enumerate}
-The loop was built up incrementally. The single- and two-tank experiments
+\TODO{Check the steps against the mill trainer (\texttt{scripts/train.py},
+\texttt{llm\_supervisor/trainer.py}) and add: the duplicate-candidate re-ask;
+prompt caching and staggered requests (cost); the score cache.}
+
+The loop was built up incrementally on the tank test beds
+(Chapter~\ref{ch:tanks}). The single- and two-tank experiments
 used an earlier version with one candidate per trial ($K=1$), aggregate
 failure counts instead of decision traces and only a short qualitative
-description of the process, and they were run while the setup was still
-changing, with more than one DeepSeek model. The quadruple-tank fault
+description of the process. The quadruple-tank fault
 experiments used $K=4$, decision traces and lessons written by the LLM. The
 guard schedule, the failure traces of rejected candidates, the one-change rule
 and the measured record were added in the coordination runs, and $K$ was
-lowered to 3 to reduce the cost per generation. On the quadruple-tank fault
-task the prompt is about 6\,300 tokens; on the coordination task it grows from
-about 17\,000 to 25\,000 tokens over a run, mostly from the traces and the
-record.
+lowered to 3 to reduce the cost per generation.
+\TODO{Prompt size on the grinding circuit (tokens, cached vs changing part).}
 
 Every run has its own folders for its candidates, its champion and its logs:
 one line per candidate with its decision, score, the model's analysis and
 change, and token usage; the per-scenario metrics of every evaluated program;
 the lessons; and the settings and code version of every start. A run can be
-continued under its name and stopped cleanly between generations. An example
-of a generated supervisor is given in Appendix~\ref{app:supervisor}.
+continued under its name and stopped cleanly between generations. A
+generated grinding-circuit supervisor is listed in
+Appendix~\ref{app:mill-champion}.
+
+\subsection{Prompt versions: one champion, or explore then exploit}
+\label{sec:prompt-versions}
+\TODO{Describe the prompt versions (\texttt{trainer.PROMPT\_VERSIONS};
+mill \texttt{docs/explore\_exploit.md}, \texttt{docs/noise\_training.md}).}
+% - Version 5: one champion throughout.
+% - Version 6 (the registered protocol's version): explore in three lineages
+%   with different priorities (energy, level, quality) for 4 generations,
+%   choose the best, then exploit it for the remaining 8 generations with one
+%   candidate per large score term.
+% - Version 7: version 6 with measurement noise on every battery and a prompt
+%   that says so. Not used in the protocol (no training under noise); mention
+%   only as an exploratory variant (Section sec:mill-noise-results).
+% - Why: v5 runs locked in on their first design (dev spread 9.2 points);
+%   v6 spread 1.7 (Section sec:mill-runs).
+
+\subsection{Simulation engineering}
+\label{sec:sim-engineering}
+\TODO{Two or three sentences only: the compiled Layer 1 (bit-identical to
+Weir's, 2--2.7$\times$ faster; mill PR~\#9), the process pool, and the score
+cache. Wall time per generation and per run.}
 
 \section{Language models}
 \label{sec:models}
-All runs reported in this thesis used DeepSeek's \texttt{deepseek-flash}
-through its API, which on early tests was better than the larger DeepSeek
-model on these tasks and is priced at US\$0.15 per million input tokens and
-US\$0.60 per million output tokens. Its reasoning effort is configurable:
+\TODO{Rewrite. The tank test beds used DeepSeek's \texttt{deepseek-flash};
+the grinding circuit uses Claude Opus 5.5 (\texttt{claude-opus-5-5}) at
+effort low, after Weir approved sending plant data and code to Anthropic
+(2026-10-22). Say why the switch happened, and that models were not compared
+on the mill (a limitation). The old claim that deepseek-flash was better
+``on early tests'' needs the logged comparison or should go.}
+On the tank test beds, DeepSeek's \texttt{deepseek-flash} was used through its
+API, priced at US\$0.15 per million input tokens and US\$0.60 per million
+output tokens. Its reasoning effort is configurable:
 no thinking, low or high. Output tokens, mostly reasoning, make up about 97\%
-of the cost. The trainers also support OpenAI's \texttt{gpt-6-luna} and
-\texttt{gpt-6.1-sol}, and the grinding-circuit trainer supports Anthropic's
-Claude Opus, Sonnet and Haiku 5.5 with adaptive thinking and a configurable
-effort. Weir approved sending plant data and code to Anthropic in October 2026;
-for the other external providers this is still open. Each provider has its own
+of the cost. Each provider has its own
 token prices in the trainer, so the cost of every request is logged.
-\TODO{Replace ``on early tests'' with the measured comparison of deepseek-flash and the larger DeepSeek model, if it was logged.}
 
 \section{Comparators}
 \label{sec:comparators}
@@ -277,28 +266,81 @@ Each supervisor is compared with baselines on the same batteries.
 \item[Fixed recipe] The seed supervisor: it holds the nominal operating
   recipe (or rescales it when the target changes) and ignores disturbances.
   It shows what the regulatory loops achieve on their own.
-\item[Model predictive controller] For the quadruple-tank coordination test
-  bed, a model predictive supervisor written for this thesis, with an
-  internal model of the plant and the PI loops and an online disturbance
-  estimate. It is evaluated untuned and tuned on the development battery with
-  a search budget comparable to the LLM's number of candidates
-  (Section~\ref{sec:coord-baselines}).
-\item[TD-MPC] For the grinding circuit, Weir's TD-MPC controller
+\item[Decentralised PI] A simple supervisory baseline on the grinding
+  circuit (Section~\ref{sec:mill-baselines}).
+\item[TD-MPC] Weir's TD-MPC controller
   \cite{hansen2022tdmpc}, trained on the same simulator and acting on the
-  same setpoints (Chapter~\ref{ch:mill}).
+  same setpoints (Section~\ref{sec:mill-tdmpc}). It is the primary comparator.
 \end{description}
+On the quadruple-tank rehearsal the model-based comparator was an MPC written
+for this thesis (Section~\ref{sec:tank-comparator}).
 
 \section{Pre-registered protocol}
 \label{sec:protocol}
-\TODO{Describe the grinding-circuit protocol (mill repository, \texttt{docs/PROTOCOL.md}) once it is registered: the choices agreed with Weir (P80 range 180--200~$\mu$m, both controllers at 300~s, the deployed TD-MPC \texttt{autumn-night-41}), the number of runs and generations, the prompt version, the policy per run, the sealed test battery (seed 20261109, 216 scenarios in five parts, fingerprinted, every opening logged), the hierarchical bootstrap with the score and the TD-MPC reward as co-primary measures, $H_{0,2}$ as a slope over the amplitude levels 1, 1.25, 1.5 and 2, the C3 statistics and the variants. Note the deviation from the goal document (bootstrap instead of paired t-tests and a mixed model) and why. See THESIS\_GUIDE.md, Chapter 3.}
 The exploratory runs on the tank test beds and on the grinding circuit
 changed the training loop while the development and validation results were
 being looked at, and their champions were selected on the same scenarios
 they are compared on. Such results cannot test a hypothesis. The comparison
 that tests $H_{0,1}$ and $H_{0,2}$ therefore follows a protocol registered in
-the repository before its runs. It fixes, in one commit, the test bed, the
+the repository before its runs (mill repository
+\texttt{lib/llm-supervisor/docs/PROTOCOL.md}, version~1, registered
+2026-11-18). It fixes, in one commit, the test bed, the
 score, the batteries, the method, the number of runs, the comparator and the
 statistics. Any change creates a new version and restarts the runs; runs
 under an earlier version are reported, not discarded. The same design was
-first registered for the quadruple-tank rehearsal
-(Section~\ref{sec:coord-protocol}).
+first registered for the quadruple-tank rehearsal, which was never run
+(Section~\ref{sec:tank-protocol}, Appendix~\ref{app:four-tank-protocol}).
+
+\paragraph{Choices agreed with Weir.}
+\TODO{P80 requirement is the range 180--200~$\mu$m (P80 IAE and setpoint
+travel reported, unweighted); the TD-MPC is the deployed
+\texttt{autumn-night-41} with its own planner configuration; both controllers
+at 300~s, a recommended operator cadence (Weir, 2026-11-03).}
+
+\paragraph{Runs and policies.}
+\TODO{$N = 8$ independent runs, prompt version~6, Claude Opus 5.5 at effort
+low in both phases, 12 generations, 3 candidates per generation, 300~s
+decisions, 2 scenarios per cell, every run from the fixed recipe, no noise in
+training. Why each setting (measured on seen batteries, so they chose the
+method, they are not results): v6 over v5, 12 generations, low effort in the
+explore phase, no noise training (may follow as a separate protocol). A run
+that fails is resumed, never replaced. Policy = final champion. Cost about
+US\$27--29 and two to three days on one machine.}
+
+\paragraph{Sealed test battery.}
+\TODO{Seed 20261109, 216 scenarios in five parts: \texttt{test\_dev} (56,
+development range, 8 steady and 48 disturbed), \texttt{test\_amp125},
+\texttt{test\_amp150}, \texttt{test\_amp200} (48 each, the same draws at
+1.25, 1.5, 2 times the amplitude), \texttt{test\_sine} (16, unseen sine
+periods). Fingerprinted, opened once on the original Layer 1, every opening
+logged. Table of parts.}
+
+\paragraph{Analyses.}
+\TODO{All at significance level $\alpha = 0.05$; hierarchical bootstrap over
+policies then scenarios ($B = 10\,000$).}
+% - H0,1: mean paired difference LLM minus TD-MPC on test_dev; rejected if the
+%   95 % interval excludes 0. Co-primary: score AND TD-MPC reward; H1 only if
+%   the LLM is not worse beyond the margin on both.
+% - Equivalence (TOST): 90 % interval inside +-3.5 score points and +-0.02
+%   reward (absolute, per-episode mean). Explain the margin: ~5 % of the
+%   TD-MPC's dev score; 0.35 kWh/t, 35 s outside a band or 0.7 um.h of P80
+%   outside range; within one draw's variation; 0.02 reward < what the TD-MPC
+%   gains going 300 -> 60 s.
+% - Cohen's d_z (mean paired difference / SD of paired differences) with a
+%   bootstrap interval: descriptive only, and why it cannot be the criterion.
+% - H0,2: slope of mean log(1 + score) against amplitude level 1, 1.25, 1.5, 2,
+%   LLM minus TD-MPC, paired by scenario; rejected if 95 % interval excludes 0.
+% - C3: per-policy means (median, IQR, range), between-policy SD with a
+%   chi-square interval, runs without a promotion.
+% - Secondary (Holm-corrected): P80 outside range, P80 IAE, level band, CL
+%   band, safety, travel, energy, CL target; per kind and pattern;
+%   steady/step vs ramp/sine. These give the comparison from several
+%   perspectives (P80, energy, level, ...), as asked in the 2026-11-19 meeting.
+
+\paragraph{Variants.}
+\TODO{Reported, not confirmatory: both at 900~s and at 60~s; the noise
+categories of Section~\ref{sec:mill-noise} on the frozen policies.}
+
+\paragraph{Deviations from the goal document.}
+\TODO{Bootstrap and TOST instead of paired $t$-tests and a mixed model, and
+why: few policies, non-normal scores, terminal episodes.}
