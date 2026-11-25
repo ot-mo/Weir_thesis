@@ -1,9 +1,306 @@
-\chapter{Tank test-bed details}
+\chapter{Development on tank processes}
 \label{app:tanks}
-% Moved here from the former Method, Toy examples and Setpoint coordination
-% chapters (THESIS_GUIDE.md, Ch. 4 and Appendices). Trim freely.
+% The full tank story, moved out of the main text (otto, 2026-11-25: focus on
+% the grinding circuit). The main text keeps only Section sec:dev-lessons of
+% the Method chapter. Trim freely; everything here is optional reading.
+Before the grinding circuit was available, the method was built on four tank
+test beds of increasing difficulty, with DeepSeek's \texttt{deepseek-flash}.
+The first three ask the supervisor to detect leaks; the fourth rehearses
+setpoint coordination against an MPC. Their batteries had a \emph{held-out}
+battery that was shown to the LLM only as a gap and never used for promotion.
+Section~\ref{sec:dev-lessons} summarises what they taught; this appendix gives
+the evidence.
 
-\section{Fault-detection interface and score}
+\section{Lessons, with their evidence}
+\subsection{The test beds}
+\label{sec:tank-testbeds}
+% Setup in two sentences each; details in Appendix app:tanks.
+\paragraph{Leak detection.} Three processes with leaks as the fault: a
+single tank, a two-tank cascade and the quadruple-tank process
+\cite{johansson2000} from the PC-Gym benchmark suite \cite{bloor2024pcgym}.
+The supervisor raises one anomaly flag per loop and may adjust the setpoints;
+the score (Appendix~\ref{app:tanks}) charges tracking error, safety
+violations, missed anomalies and false positives.
+Model-based fault detection compares measured behaviour with what a model
+predicts for the fault-free case and alarms when the residual is large enough
+\cite{isermann2006}; the trade-off between missed detections, false alarms and
+delay is reflected in the score. On all three processes the generated
+supervisors reduced the development score by 72--96\% against PID control
+alone (Table~\ref{tab:summary}).
+
+\paragraph{Setpoint coordination.}
+
+The coordination test bed is the quadruple-tank process with two
+cross-paired PI loops (Table~\ref{tab:coord-analog}). The product is the
+production rate $Q$, the summed outflow of the lower tanks; the level $h_2$
+must stay inside a band and the upper levels below a limit. Two setpoints and
+one production target leave one degree of freedom. Disturbances on the feed,
+a pump gain or a valve split come as steps, ramps or sines, with 42
+development, 42 held-out and 36 beyond-range scenarios of 1\,200~s. The
+supervisor is called every 10~s on a 600~s window, and the score is
+\begin{equation}
+  J_s = \mathrm{IAE}_{Q,s} + 2\,(B_s + U_s) + 10\,V_s + 100\,\mathrm{TV}_s
+        + 10^3\,E_s ,
+  \label{eq:coord-score}
+\end{equation}
+% IAE_Q: production error (L); B, U: seconds with h2 outside its band / an
+% upper level above its limit; V: seconds outside safety bounds; TV: setpoint
+% total variation (m); E: exceptions and timeouts.
+
+\begin{table}[tb]
+  \centering
+  \caption{The grinding-circuit objectives and their analogs on the
+    quadruple-tank process.}
+  \label{tab:coord-analog}
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    Grinding circuit & Quadruple-tank analog \\
+    \midrule
+    P80 on target                  & production rate $Q$ on target \\
+    Sump level stable              & $h_2$ inside a band \\
+    Circulating load within limits & $h_3$ and $h_4$ below a limit \\
+    Fresh feed flow variation      & draw-off at tank 1 or 2, extra inflow at tank 2 \\
+    Ore density variation          & loss of pump gain $k_1$ or $k_2$ \\
+    Percentage solids variation    & shift of valve split $\gamma_1$ or $\gamma_2$ \\
+    Setpoint smoothness            & total variation of the setpoints \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Specification gaming and the regression guard}
+\label{sec:tank-gaming}
+% Lesson 1 (two-tank cascade).
+The two-tank cascade exposed specification gaming: a candidate
+improved the average score by flagging anomalies almost constantly. A false
+positive cost the same in the fault-free scenario as anywhere else, and the
+loss there was outweighed by fewer missed anomalies elsewhere. Other
+candidates improved the average while making one scenario much worse; 10 of
+58 trials were of this kind. This led to the asymmetric false-positive cost
+and to the regression guard (Section~\ref{sec:promotion}).
+
+\subsection{Check the test bed before the search}
+\label{sec:tank-testbed-check}
+% Lesson 2 (quadruple tank, fault detection).
+The first training runs on the quadruple-tank process stalled at
+$J \approx 36\,300$. The cause was three defects in the test bed rather than
+a limit of the search: faults injected through PC-Gym's environment wrapper
+were never applied; a decision interval equal to the window length put a
+floor on the score; and the diagonal loop pairing ($\lambda = -0.07$) made the
+severe tank-1 scenario impossible for any setpoint policy. At the plateau the
+champion was within about 7\% of the best score any supervisor could reach on
+the flawed test bed. A perfect-detection oracle, which sets each flag to the
+true fault state, exposed the plateau; computing such a bound before
+interpreting a plateau would have revealed the problem much earlier. After
+the corrections, the best supervisors matched the oracle
+(Table~\ref{tab:four}).
+
+\begin{table}[tb]
+  \centering
+  \caption{Quadruple-tank process (leak detection) after the test-bed
+    corrections.}
+  \label{tab:four}
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    Supervisor & Development & Held-out \\
+    \midrule
+    PID only (and the seed supervisor)          & 64\,865 & 69\,569 \\
+    Plateau champion, not retrained             & 10\,777 & 14\,941 \\
+    Best generated (low reasoning, generation 2) &  2\,635 &  2\,609 \\
+    Perfect-detection oracle                    &  2\,635 &  2\,609 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Reasoning is needed; low effort is enough for detection}
+\label{sec:tank-reasoning}
+% Lesson 3: the only model ablation in the thesis. Keep.
+The same search was run from the seed supervisor with three reasoning
+settings (Figure~\ref{fig:reasoning} and Table~\ref{tab:reasoning}). With
+high and low reasoning the search matched the oracle on both batteries within
+three and two generations, respectively, and the held-out scores followed the
+development scores. Without reasoning the search improved quickly at first
+but stalled at 11\,837 from the third generation on, about 4.5 times the
+oracle score. Three weaknesses stood out without reasoning: it missed 49--83
+samples in each scenario with a mild leak, against 4--12 with reasoning; its lessons contained
+incorrect physics, for example that a leak lowers the other loop's effort
+through a shared outflow path that does not exist; and three of twelve
+candidates in generations 4--6 called a built-in function that the sandbox
+does not provide, after the prompt's list of allowed functions ended in
+``etc.''. The list is now generated from the sandbox itself. With high
+reasoning, 8 of 15 requests returned an empty response that was still
+billed.
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=\textwidth]{four_tank_reasoning_comparison}
+  \caption{Score of the champion after each generation for three reasoning
+    settings, on the development and held-out batteries (log scale). Dots
+    are individual candidates; the three near $7\cdot 10^5$ crashed on every
+    call. Generation~0 is the seed supervisor. The high-reasoning run used
+    low reasoning in its third generation and an earlier, longer prompt in
+    its first two.}
+  \label{fig:reasoning}
+\end{figure}
+
+\begin{table}[tb]
+  \centering
+  \caption{Cost of reaching the oracle with different reasoning settings
+    (DeepSeek off-peak prices, US dollars).}
+  \label{tab:reasoning}
+  \begin{tabular}{@{}lccc@{}}
+    \toprule
+    Reasoning & Generations & Output tokens & Cost \\
+              & to oracle   & per request   & to oracle \\
+    \midrule
+    High & 3 & $\approx 61\,000$ & $\approx 0.63$ \\
+    Low  & 2 & $\approx 23\,000$ & $\approx 0.11$ \\
+    None & not reached in 6 & $\approx 2\,000$ & -- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Each setting was run only once, and the runs differ slightly in their
+prompts as noted in Figure~\ref{fig:reasoning}. The results therefore support
+the conclusion that reasoning is needed and that low reasoning is enough for
+this task, but not a precise ranking of low against high reasoning; this was
+not investigated further.
+
+\subsection{What the search needs}
+\label{sec:tank-search}
+% Lesson 4: exactly what the mill trainer inherited. One sentence per change;
+% the full run table is in Appendix app:tanks (tab:coord-runs).
+The coordination runs used the training loop of
+Section~\ref{sec:training-loop} with three candidates per generation. Four
+parts of that loop were added during these runs, each after a run that
+stalled (all runs in Table~\ref{tab:coord-runs}, Appendix~\ref{app:tanks}):
+\begin{itemize}
+\item \emph{Regression guard by disturbance type, with a schedule.} The
+  per-scenario guard of the leak test beds rejected every candidate that beat
+  the seed in the first 600~s run (the best scored 258 against 533), so the
+  prompt kept showing only the seed.
+\item \emph{Failure traces of rejected candidates}, so that the LLM sees why a
+  change failed.
+\item \emph{One targeted change per candidate.} Without this rule,
+  candidates rewrote the supervisor, keeping 16--65\% of the champion's lines,
+  and each fixed one scenario while breaking others. With it they kept
+  83--99\%.
+\item \emph{A measured record instead of unverified lessons.} In one run all
+  nine candidates made the same change, which failed, and the lessons saved
+  from them recommended it again.
+\end{itemize}
+The guard schedule gave the first promotion with the 600~s window. Nine
+further generations at low effort promoted nothing; the same loop at high
+effort, seeded with that champion and its record, promoted in each of four
+generations, so the effects of effort and record are not separated. Repeated
+runs of the same setup ended far apart (development 292--417), a first sign
+for C3. All coordination runs cost about US\$4.1.
+
+\subsection{A comparator is only as good as its tuning}
+\label{sec:tank-comparator}
+% Lesson 5. Keep tab:coord-main. tab:coord-metrics and tab:coord-kind dropped.
+The model-based comparator was an MPC written for this thesis: it searches
+a grid of setpoint pairs with an internal model of the plant and the PI loops,
+and estimates the disturbance with the bias update common in industrial MPC
+\cite{qin2003}. It was evaluated untuned, tuned by a random search of 40
+configurations on the development battery (a budget comparable to the LLM's
+candidates), and with the true disturbance as a reference. After the runs the
+PI loops were retuned to $M_s \le 1.6$; the champions were not retrained.
+
+Table~\ref{tab:coord-main} compares the best generated supervisor, the
+champion of the high-effort run, with the baselines. It reduces the fixed
+recipe's development score by 47\%, but it is 67\% worse than the tuned MPC
+(265.4 against 158.8). With the original PI loops and against the untuned
+MPC, the same champion had come within 1.3\% (206.3 against 203.7). Two
+things changed after the runs. First, the MPC was tuned with a budget
+comparable to the LLM's, which lowered its development score by 21\%. Second,
+the PI loops were retuned. The MPC's internal model includes the loops, so it
+adapts to new gains, but the generated supervisor encodes the old regulatory
+dynamics as constants (hold times, prediction horizons of its trim, settling
+assumptions), and its development score rose by 59 points. Which constants
+cause the loss was not investigated further.
+The champion's deficit is production error (230.5 against 119.7~L per
+scenario for the tuned MPC), and it recovers about twice as slowly. Beyond
+the range both degrade by a factor of about 4.6--4.8, the generated supervisor
+by giving up the constraints to hold production.
+
+\begin{table}[tb]
+  \centering
+  \caption{Average score on the coordination batteries with the retuned PI
+    loops (lower is better). The beyond-range battery is never shown to the
+    LLM. The generated supervisors were trained with the original PI loops.}
+  \label{tab:coord-main}
+  \begin{tabular}{@{}lrrr@{}}
+    \toprule
+    Controller & Development & Held-out & Beyond range \\
+    \midrule
+    Fixed recipe (seed)                 & 498.3 & 447.0 & 1\,470.5 \\
+    Generated, low reasoning effort     & 278.9 & 289.7 & 1\,349.3 \\
+    Generated, high reasoning effort    & 265.4 & 274.0 & 1\,223.0 \\
+    Untuned MPC                         & 202.0 & 216.6 & 1\,081.5 \\
+    Tuned MPC                           & 158.8 & 170.4 &    770.2 \\
+    Tuned MPC, known disturbance        & 140.6 & 163.1 &    738.9 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Nominal ranking does not predict robustness}
+\label{sec:tank-robustness}
+% Lesson 6: the same finding as on the mill under measurement noise.
+% Make tab:coord-stress compact (e.g. drop the stuck-sensor rows).
+Table~\ref{tab:coord-stress} shows conditions none of the controllers was
+designed for, on the 84 development and held-out scenarios. The tuned MPC more
+than doubles its score with 3~mm of level noise ($+156\%$) while the generated
+supervisor changes by 3\%: tuning on a noise-free, exact model made the MPC
+sharper and more fragile. The grinding circuit shows the same under
+measurement noise (Section~\ref{sec:mill-noise-results}).
+
+\begin{table}[tb]
+  \centering
+  \caption{Stress tests on the coordination test bed: mean score over the
+    development and held-out batteries (84 scenarios), and the change against
+    the same controller without stress.}
+  \label{tab:coord-stress}
+  \small\setlength{\tabcolsep}{3pt}
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    Condition & Generated & Fixed recipe & Untuned MPC & Tuned MPC \\
+    \midrule
+    Nominal             & 269.7          & 472.7          & 209.3          & 164.6 \\
+    Noise 1~mm          & 263.7 ($-$2\%)   & 472.5 (0\%)    & 198.0 ($-$5\%)   & 241.9 (+47\%) \\
+    Noise 3~mm          & 278.1 (+3\%)   & 472.2 (0\%)    & 244.4 (+17\%)  & 421.0 (+156\%) \\
+    Mismatch A          & 801.1 (+197\%) & 955.0 (+102\%) & 881.6 (+321\%) & 838.0 (+409\%) \\
+    Mismatch B          & 469.4 (+74\%)  & 560.8 (+19\%)  & 506.2 (+142\%) & 432.2 (+163\%) \\
+    Analyser delay      & 277.1 (+3\%)   & 472.7 (0\%)    & 209.3 (0\%)    & 164.6 (0\%) \\
+    $h_3$ reads NaN     & 439.9 (+63\%)  & 537.9 (+14\%)  & 490.2 (+134\%) & 531.9 (+223\%) \\
+    $h_4$ stuck         & 276.5 (+3\%)   & 472.7 (0\%)    & 212.5 (+2\%)   & 173.7 (+6\%) \\
+    Production stuck    & 279.9 (+4\%)   & 472.7 (0\%)    & 209.3 (0\%)    & 164.6 (0\%) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{The generated coordination supervisor}
+\label{sec:coord-champion}
+% Short version; the five-step walkthrough is dropped unless pages allow.
+The best coordination supervisor is a single 261-line function that the LLM
+turned from the fixed recipe into a steady-state optimiser: a disturbance
+estimator from mass balances, a search over 61 splits of the production target
+against a cost, and a predictive feedback trim, an MPC-like structure with
+every part visible. Its hold time and trim horizon are the constants that
+describe the old loops' transient, which is how the loss with the retuned
+loops could be pointed to in the code.
+
+\subsection{The four-tank protocol, registered and not run}
+\label{sec:tank-protocol}
+A protocol (version~2: eight runs of six generations at high effort against
+the tuned MPC on a sealed battery of 183 scenarios) was registered for this
+rehearsal and never run, because the grinding circuit and its real comparator
+became available and the budget went there. Its design was reused for the
+grinding-circuit protocol (Section~\ref{sec:protocol}); the registered text is
+in Section~\ref{app:four-tank-protocol}.
+
+\section{Test-bed details}
+
+\subsection{Fault-detection interface and score}
 On the leak test beds the supervisor is
 \begin{center}
 \texttt{supervise(telemetry\_window, active\_setpoints, nominal\_targets)}.
@@ -62,7 +359,7 @@ fault-free scenario) or the larger of 100 points and 15\% (fault scenarios).
   \end{tabular}
 \end{table}
 
-\section{Single tank}
+\subsection{Single tank}
 One tank with a pump controlled by a PID loop
 ($K_p = 2$, $K_i = 0.5$, $K_d = 0.1$) at a sample time of 0.1~s, and an
 unmeasured leak as the fault. The supervisor decides every 3~s on the last
@@ -75,7 +372,7 @@ compared with PID alone. Early supervisors lowered the setpoint during a fault
 and never raised it again, which led to the restoration term $R_s$ in
 \eqref{eq:score}.
 
-\section{Two-tank cascade}
+\subsection{Two-tank cascade}
 Tank~1 drains by gravity into tank~2, and each tank has
 its own pump and PID loop with the same gains as above. A leak in tank~1
 alone moves the level of tank~2 by more than 2~m, so the supervisor must tell
@@ -83,7 +380,7 @@ propagated disturbances from genuine faults. Of 58 trials, 7 were promoted and
 10 were rejected by the regression guard. The final supervisor reduced the
 development score by 72\% and the held-out score by 61\%.
 
-\section{Quadruple-tank process}
+\subsection{Quadruple-tank process}
 The quadruple-tank process \cite{johansson2000} from the
 PC-Gym benchmark suite \cite{bloor2024pcgym} has four tanks and two pumps.
 Each pump feeds one lower tank directly and, through a split valve, the upper
@@ -97,7 +394,7 @@ supervisor decides every 10~s on the last 50~s of telemetry. After re-pairing
 the loops off-diagonally, they are PI controllers with $K_p = 40$ and
 $K_i = 0.3$.
 
-\section{Coordination runs}
+\subsection{Coordination runs}
 \label{sec:coord-runs}
 Table~\ref{tab:coord-runs} lists every exploratory coordination run. Each row
 changed one part of the loop from the row above. The first runs used a 50~s
@@ -133,3 +430,57 @@ final test bed (600~s window, three scenarios per cell, retuned PI loops).
     \bottomrule
   \end{tabular}
 \end{table}
+
+\section{The four-tank protocol (version 2)}
+\label{app:four-tank-protocol}
+During the exploratory coordination runs, the training loop was redesigned
+about a dozen times while the development, held-out and beyond results were
+being looked at, and the best champion came out of a hand-steered chain of
+runs. Such a result cannot test a hypothesis. Before any confirmatory run,
+a protocol was therefore registered in the repository. It fixes, in one
+commit, the test bed, the score weights, the batteries, the method, the
+number of runs, the comparator and the statistics. Any change creates a new
+version and restarts the runs; runs under an earlier version are reported,
+not discarded. Version~2, the current one, was registered after the PI loops
+of the test bed were retuned and the MPC re-tuned accordingly, before any
+protocol run and before any access to the sealed battery.
+
+\paragraph{Runs and policies.} $N = 8$ independent runs of six generations
+each, all from the fixed recipe, with \texttt{deepseek-flash} at high
+reasoning effort and three candidates per generation. A run that fails for
+technical reasons is resumed under the same name, never replaced or dropped.
+The policy of each run is its final champion; it is not chosen by any other
+score.
+
+\paragraph{Comparator.} The primary comparator is the tuned MPC with frozen
+parameters; the untuned MPC is secondary, and the fixed recipe and the tuned
+MPC with known disturbance are references.
+
+\paragraph{Sealed test battery.} 183 scenarios with their own seed: 42 in the
+development range (including nominal target changes), 36 each at 1.25, 1.5
+and 2 times a development draw, 24 with sine periods outside the development
+range (100--180~s and 550--800~s), and 9 with feed, pump and split
+disturbances together. The battery is evaluated once, after all runs are
+complete.
+
+\paragraph{Analyses.} All intervals come from a hierarchical bootstrap
+($B = 10\,000$) that resamples policies and then scenarios.
+\begin{itemize}
+\item $H_{0,1}$: the mean paired difference in score, LLM minus tuned MPC,
+  over the 8 policies and the 42 development-range test scenarios. $H_{0,1}$
+  is rejected if the 95\% interval excludes zero. Failing to reject does not
+  establish parity: the two are called equivalent only if the 90\% interval
+  lies within $\pm 10\%$ of the MPC's mean score (two one-sided tests).
+\item $H_{0,2}$: the slope of the mean $\log(1 + J_s)$ against the amplitude
+  level (1, 1.25, 1.5 and 2), LLM minus MPC. $H_{0,2}$ is rejected if the
+  95\% interval of the slope difference excludes zero.
+\item C3: the median, interquartile range and range of the per-policy mean
+  scores, the between-policy standard deviation with a chi-square
+  confidence interval, and the number of runs without any promotion.
+\end{itemize}
+Secondary analyses are the per-term differences with Holm-corrected
+bootstrap $p$-values, the score ratios on the unseen periods and
+combinations, and results per disturbance type and pattern. Stress tests
+with noise, plant mismatch, analyser delay and telemetry faults, and two
+ablations (a prompt without the plant equations, and the best of 18 one-shot
+samples without the feedback loop) are planned as exploratory.

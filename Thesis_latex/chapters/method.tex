@@ -4,16 +4,16 @@
 % circuit, described generally enough to be applied to another plant (no
 % changes fitted to this mill). Tank-era differences in one paragraph.
 % Framing: each piece exists because something failed without it; point
-% forward to Chapter ch:tanks (tanks) and Section sec:mill-runs (mill).
+% forward to Section sec:dev-lessons (tanks) and Section sec:mill-runs (mill).
 % Target length 10-12 pages.
 This chapter describes the method as it is implemented: the architecture, the
 interface between the generated code and the process, the checks around that
 code, how candidates are scored and promoted, the training loop, the language
 models, the comparators and the pre-registered protocol for the comparison.
 The grinding circuit itself is described in Chapter~\ref{ch:mill}. Parts
-of the method were developed on the tank test beds of
-Chapter~\ref{ch:tanks}; where a part was added in response to a failure, that
-chapter tells why.
+of the method were developed on tank test beds before the grinding circuit was
+available; Section~\ref{sec:dev-lessons} summarises what each of them taught,
+and Appendix~\ref{app:tanks} gives the details.
 
 \section{Three-layer architecture}
 \label{sec:architecture}
@@ -118,7 +118,7 @@ lower is better.
 constraint bands, safety, energy where relevant), a large penalty per
 exception or timeout, terms reported but not scored. The grinding-circuit
 weights are in Section~\ref{sec:mill-score}; the tank scores are in
-Chapter~\ref{ch:tanks} and Appendix~\ref{app:tanks}.}
+Appendix~\ref{app:tanks}.}
 
 \subsection{Batteries}
 \label{sec:batteries}
@@ -205,7 +205,7 @@ performs the following steps.
 prompt caching and staggered requests (cost); the score cache.}
 
 The loop was built up incrementally on the tank test beds
-(Chapter~\ref{ch:tanks}). The single- and two-tank experiments
+(Appendix~\ref{app:tanks}). The single- and two-tank experiments
 used an earlier version with one candidate per trial ($K=1$), aggregate
 failure counts instead of decision traces and only a short qualitative
 description of the process. The quadruple-tank fault
@@ -273,7 +273,47 @@ Each supervisor is compared with baselines on the same batteries.
   same setpoints (Section~\ref{sec:mill-tdmpc}). It is the primary comparator.
 \end{description}
 On the quadruple-tank rehearsal the model-based comparator was an MPC written
-for this thesis (Section~\ref{sec:tank-comparator}).
+for this thesis (Appendix~\ref{app:tanks}).
+
+\section{Lessons from developing the method on tank processes}
+\label{sec:dev-lessons}
+% Replaces the former tank chapters (otto, 2026-11-25): the tanks are the
+% history of the method, not results. One page; evidence in Appendix app:tanks.
+The method was developed on four simulated tank processes before the grinding
+circuit was available: a single tank, a two-tank cascade and the
+quadruple-tank process \cite{johansson2000,bloor2024pcgym} with leaks as
+faults, and a setpoint-coordination version of the quadruple-tank process that
+rehearsed the comparison against an MPC. They used \texttt{deepseek-flash}.
+They do not answer the research questions, but each part of the loop above
+exists because something failed without it there:
+\begin{description}
+\item[Specification gaming.] Candidates improved the average score by
+  flagging faults constantly or by breaking one scenario badly. This led to
+  the regression guard (Section~\ref{sec:promotion}).
+\item[A sound test bed first.] A long plateau on the quadruple-tank process
+  was caused by the test bed (faults never applied, a decision grid that put a
+  floor on the score, a wrong loop pairing). A perfect-detection oracle exposed
+  it. Bounding what is achievable comes before interpreting a plateau.
+\item[Some reasoning is needed.] Without reasoning the search stalled at 4.5
+  times the oracle and wrote physically wrong lessons; low reasoning reached
+  the oracle at a sixth of the cost of high reasoning
+  (Section~\ref{sec:tank-reasoning}).
+\item[What the search needs.] A guard per disturbance type that is loose in
+  early generations, failure traces of rejected candidates, one targeted change
+  per candidate, and a measured record of failed changes instead of
+  unverified lessons. These four went unchanged into the grinding-circuit
+  trainer (Section~\ref{sec:tank-search}).
+\item[A fair comparator.] The best coordination supervisor came within 1.3\%
+  of an untuned MPC, but was 67\% worse than the same MPC tuned with a
+  comparable budget, and it had encoded the transient of the PI loops as
+  constants (Section~\ref{sec:tank-comparator}).
+\item[Robustness is not the nominal ranking.] Under 3~mm of level noise the
+  tuned MPC's score rose by 156\%, the generated supervisor's by 3\%
+  (Section~\ref{sec:tank-robustness}). The grinding circuit shows the same
+  (Section~\ref{sec:mill-noise-results}).
+\end{description}
+A protocol was registered for the four-tank comparison and never run; its
+design was reused for the grinding circuit (Section~\ref{sec:protocol}).
 
 \section{Pre-registered protocol}
 \label{sec:protocol}
@@ -289,7 +329,7 @@ score, the batteries, the method, the number of runs, the comparator and the
 statistics. Any change creates a new version and restarts the runs; runs
 under an earlier version are reported, not discarded. The same design was
 first registered for the quadruple-tank rehearsal, which was never run
-(Section~\ref{sec:tank-protocol}, Appendix~\ref{app:four-tank-protocol}).
+(Section~\ref{app:four-tank-protocol}).
 
 \paragraph{Choices agreed with Weir.}
 \TODO{P80 requirement is the range 180--200~$\mu$m (P80 IAE and setpoint
