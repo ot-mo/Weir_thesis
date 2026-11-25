@@ -1,0 +1,135 @@
+\chapter{Tank test-bed details}
+\label{app:tanks}
+% Moved here from the former Method, Toy examples and Setpoint coordination
+% chapters (THESIS_GUIDE.md, Ch. 4 and Appendices). Trim freely.
+
+\section{Fault-detection interface and score}
+On the leak test beds the supervisor is
+\begin{center}
+\texttt{supervise(telemetry\_window, active\_setpoints, nominal\_targets)}.
+\end{center}
+The telemetry window holds, for each controlled tank
+and each sample, the level, the output of the loop regulating it (pump
+effort) and the control error. The function returns a free-text diagnosis,
+one adjusted setpoint per loop and one boolean anomaly flag per loop. The
+returned flags are held until the next decision. An exception or timeout
+raises both anomaly flags.
+
+The scenarios are a fault-free run,
+single leaks of different onset, size and duration, simultaneous leaks,
+persistent severe leaks and, for the single- and two-tank processes, sensor
+noise. The score is
+\begin{equation}
+  J_s = \mathrm{IAE}_s + 500\,V_s + 300\,M_s + c_{\mathrm{FP}}\,F_s
+        + 10^4\,E_s + 200\,R_s ,
+  \label{eq:score}
+\end{equation}
+where $\mathrm{IAE}_s$ is the integrated absolute tracking error of all
+loops, $V_s$ the number of samples outside the safety bounds, $M_s$ and $F_s$
+the number of samples, summed over loops, in which a held anomaly flag
+disagrees with the true fault state (missed anomalies and false positives),
+$E_s$ the number of exceptions and timeouts, and $R_s$ the distance between
+the final and the nominal setpoints for loops whose fault has cleared. A
+false positive on a loop that never faults in the scenario costs
+$c_{\mathrm{FP}} = 800$ (250 on the quadruple-tank process); otherwise
+$c_{\mathrm{FP}} = 160$. Without this asymmetry, flagging constantly was a
+cheap way to avoid missed anomalies. For the quadruple-tank process an
+\emph{oracle} is also evaluated. It sets each flag to the true fault state at
+every decision and keeps the nominal setpoints, which is the best detection
+possible at the given decision interval.
+
+The regression guard on the leak test beds is per scenario: no single
+scenario may get worse than the champion by more than 5 points (the
+fault-free scenario) or the larger of 100 points and 15\% (fault scenarios).
+
+\begin{table}[tb]
+  \centering
+  \caption{Leak test beds: average score $J$ (lower is better) with PID
+    control only and with the best generated supervisor. For the
+    quadruple-tank process the best supervisor equals the perfect-detection
+    oracle.}
+  \label{tab:summary}
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    & \multicolumn{2}{c}{Development} & \multicolumn{2}{c}{Held-out} \\
+    \cmidrule(lr){2-3}\cmidrule(l){4-5}
+    Process & PID only & Supervisor & PID only & Supervisor \\
+    \midrule
+    Single tank      & 31\,133 & 7\,551 & 30\,945 & 10\,487 \\
+    Two-tank cascade & 30\,775 & 8\,720 & 35\,274 & 13\,744 \\
+    Quadruple tank   & 64\,865 & 2\,635 & 69\,569 &  2\,609 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Single tank}
+One tank with a pump controlled by a PID loop
+($K_p = 2$, $K_i = 0.5$, $K_d = 0.1$) at a sample time of 0.1~s, and an
+unmeasured leak as the fault. The supervisor decides every 3~s on the last
+30 samples of a 30~s episode. The development battery has eight scenarios:
+fault-free, a standard leak, an early severe leak, a late mild leak, two
+leaks that start and stop, and a fault-free and a leaking scenario with
+sensor noise. Of 62 trials, 16 were promoted. The final supervisor
+reduced the development score by 76\% and the held-out score by 66\%
+compared with PID alone. Early supervisors lowered the setpoint during a fault
+and never raised it again, which led to the restoration term $R_s$ in
+\eqref{eq:score}.
+
+\section{Two-tank cascade}
+Tank~1 drains by gravity into tank~2, and each tank has
+its own pump and PID loop with the same gains as above. A leak in tank~1
+alone moves the level of tank~2 by more than 2~m, so the supervisor must tell
+propagated disturbances from genuine faults. Of 58 trials, 7 were promoted and
+10 were rejected by the regression guard. The final supervisor reduced the
+development score by 72\% and the held-out score by 61\%.
+
+\section{Quadruple-tank process}
+The quadruple-tank process \cite{johansson2000} from the
+PC-Gym benchmark suite \cite{bloor2024pcgym} has four tanks and two pumps.
+Each pump feeds one lower tank directly and, through a split valve, the upper
+tank above the other lower tank. With the split fractions
+$\gamma_1 = \gamma_2 = 0.2$, most of each pump's flow takes the delayed path,
+which gives a non-minimum-phase process. Only the two lower levels are
+measured. The model is integrated with the explicit Euler method at a 1~s
+step over 600~s episodes. A leak multiplies the outlet area of a lower tank
+by 1.8--4. There are six development and six held-out scenarios, and the
+supervisor decides every 10~s on the last 50~s of telemetry. After re-pairing
+the loops off-diagonally, they are PI controllers with $K_p = 40$ and
+$K_i = 0.3$.
+
+\section{Coordination runs}
+\label{sec:coord-runs}
+Table~\ref{tab:coord-runs} lists every exploratory coordination run. Each row
+changed one part of the loop from the row above. The first runs used a 50~s
+window and one scenario per cell. All champions are re-scored with the
+final test bed (600~s window, three scenarios per cell, retuned PI loops).
+
+\begin{table}[tb]
+  \centering
+  \caption{Exploratory coordination runs, in order. Gen.\ $\times$ $K$ is the
+    number of generations and candidates per generation, Prom.\ the number of
+    promotions, and cost the estimated DeepSeek cost in US dollars. Scores
+    are the champion's, re-scored with the final test bed. A run without
+    promotions ends with its seed. All runs used low reasoning effort except
+    the last.}
+  \label{tab:coord-runs}
+  \small\setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.33\textwidth}ccrrrr@{}}
+    \toprule
+    Run (change from the row above) & Gen.\ $\times$ $K$ & Prom. & Cost
+      & Dev. & Held-out & Beyond \\
+    \midrule
+    50~s window, per-scenario guard            & $2 \times 4$ & 2 & 0.31 & 296.5 & 282.7 & 1\,203 \\
+    Same setup, three more runs                & $2 \times 4$ & 0 & 0.83 & 498.3 & 447.0 & 1\,471 \\
+    Looser guard, run 1                        & $4 \times 4$ & 1 & 0.53 & 352.0 & 290.5 & 1\,257 \\
+    \phantom{Looser guard,} run 2              & $4 \times 4$ & 2 & 0.35 & 291.5 & 291.6 & 1\,231 \\
+    \phantom{Looser guard,} run 3              & $4 \times 4$ & 1 & 0.40 & 417.3 & 396.8 & 1\,345 \\
+    600~s window, 3 scenarios per cell, guard by type
+                                               & $3 \times 3$ & 0 & 0.32 & 498.3 & 447.0 & 1\,471 \\
+    Guard schedule, failure traces             & $4 \times 3$ & 1 & 0.42 & 278.9 & 289.7 & 1\,349 \\
+    One targeted change per candidate          & $3 \times 3$ & 0 & 0.11 & 278.9 & 289.7 & 1\,349 \\
+    Measured record, lessons only when promoted & $3 \times 3$ & 0 & 0.21 & 278.9 & 289.7 & 1\,349 \\
+    High reasoning effort, inherited record    & $4 \times 3$ & 4 & 0.63 & 265.4 & 274.0 & 1\,223 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

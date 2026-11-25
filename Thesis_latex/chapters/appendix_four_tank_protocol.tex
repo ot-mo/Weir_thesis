@@ -1,0 +1,56 @@
+\chapter{The four-tank protocol (version 2)}
+\label{app:four-tank-protocol}
+% Moved from the former coordination chapter (sec:coord-protocol). Registered
+% in the thesis repository (results/coordination/PROTOCOL.md) and never run
+% (Section sec:tank-protocol). Kept as registered; shorten if pages are tight.
+During the exploratory coordination runs, the training loop was redesigned
+about a dozen times while the development, held-out and beyond results were
+being looked at, and the best champion came out of a hand-steered chain of
+runs. Such a result cannot test a hypothesis. Before any confirmatory run,
+a protocol was therefore registered in the repository. It fixes, in one
+commit, the test bed, the score weights, the batteries, the method, the
+number of runs, the comparator and the statistics. Any change creates a new
+version and restarts the runs; runs under an earlier version are reported,
+not discarded. Version~2, the current one, was registered after the PI loops
+of the test bed were retuned and the MPC re-tuned accordingly, before any
+protocol run and before any access to the sealed battery.
+
+\paragraph{Runs and policies.} $N = 8$ independent runs of six generations
+each, all from the fixed recipe, with \texttt{deepseek-flash} at high
+reasoning effort and three candidates per generation. A run that fails for
+technical reasons is resumed under the same name, never replaced or dropped.
+The policy of each run is its final champion; it is not chosen by any other
+score.
+
+\paragraph{Comparator.} The primary comparator is the tuned MPC with frozen
+parameters; the untuned MPC is secondary, and the fixed recipe and the tuned
+MPC with known disturbance are references.
+
+\paragraph{Sealed test battery.} 183 scenarios with their own seed: 42 in the
+development range (including nominal target changes), 36 each at 1.25, 1.5
+and 2 times a development draw, 24 with sine periods outside the development
+range (100--180~s and 550--800~s), and 9 with feed, pump and split
+disturbances together. The battery is evaluated once, after all runs are
+complete.
+
+\paragraph{Analyses.} All intervals come from a hierarchical bootstrap
+($B = 10\,000$) that resamples policies and then scenarios.
+\begin{itemize}
+\item $H_{0,1}$: the mean paired difference in score, LLM minus tuned MPC,
+  over the 8 policies and the 42 development-range test scenarios. $H_{0,1}$
+  is rejected if the 95\% interval excludes zero. Failing to reject does not
+  establish parity: the two are called equivalent only if the 90\% interval
+  lies within $\pm 10\%$ of the MPC's mean score (two one-sided tests).
+\item $H_{0,2}$: the slope of the mean $\log(1 + J_s)$ against the amplitude
+  level (1, 1.25, 1.5 and 2), LLM minus MPC. $H_{0,2}$ is rejected if the
+  95\% interval of the slope difference excludes zero.
+\item C3: the median, interquartile range and range of the per-policy mean
+  scores, the between-policy standard deviation with a chi-square
+  confidence interval, and the number of runs without any promotion.
+\end{itemize}
+Secondary analyses are the per-term differences with Holm-corrected
+bootstrap $p$-values, the score ratios on the unseen periods and
+combinations, and results per disturbance type and pattern. Stress tests
+with noise, plant mismatch, analyser delay and telemetry faults, and two
+ablations (a prompt without the plant equations, and the best of 18 one-shot
+samples without the feedback loop) are planned as exploratory.
