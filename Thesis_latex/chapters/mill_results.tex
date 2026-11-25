@@ -1,28 +1,92 @@
 \chapter{Results on the grinding circuit}
 \label{ch:mill-results}
-\TODO{Section plan and sources: THESIS\_GUIDE.md, Chapter 6. Every table gives the mean score / TD-MPC reward (and the normalised score where available) on the development, validation and beyond-range batteries, with terminal episodes in parentheses.}
+% Purpose (THESIS_GUIDE.md, Ch. 6): the answer to the research questions.
+% Every table: mean score / TD-MPC reward (and normalised score where
+% available) on development / validation / beyond, terminal episodes in
+% parentheses. Compare from several perspectives (P80, level, circulating
+% load, safety, energy), not only the total score (2026-11-19 meeting).
+% Sections 6.1-6.7 are exploratory; 6.8 is the confirmatory result.
+% Target 15-20 pages.
+\TODO{Introduction (one paragraph): which results are exploratory (champions
+selected on the batteries they are compared on) and which are confirmatory
+(Section~\ref{sec:mill-sealed}).}
 
-\section{Training runs}
+\section{Training runs: what the search found and what it cost}
 \label{sec:mill-runs}
-\TODO{The runs (v4 at 60~s, pilot\_300s, protocol\_run1--2, explore\_run1--3, noise\_run1--2), their cost, the champion score per generation (figure), the levers the LLM found, and the spread between runs.}
+\TODO{The runs and their cost: \texttt{v4\_low\_run1--3} (60~s), \texttt{pilot\_300s}
+(12 generations, prompt version~5), \texttt{protocol\_run1--2} (v5),
+\texttt{explore\_run1--3} (v6, US\$3.23--3.62), and the eight registered
+protocol runs. One table: run, prompt version, interval, generations,
+promotions, cost, final development score.}
+\TODO{Figure: champion score per generation for each 300~s run (plotting
+script still to be written).}
+\TODO{What the LLM found: the levers (mill speed to about 12~rpm for energy,
+cyclone pressure for level, sump density for P80); trial outcomes (e.g.\
+pilot: 9 promoted, 15 rollbacks of 36); lines kept per candidate (median
+98\%: runs polish their first design).}
+\TODO{Spread (preview of C3): v5 runs 67.0--76.2 on development, reward
+0.76--0.92, set by the early mill-speed choice; v6 spread 1.7 points; the
+regression guard can block progress from a bad start.}
 
 \section{Main comparison at 300 s}
 \label{sec:mill-main}
-\TODO{The champions against the TD-MPC, the decentralised PI and the fixed recipe at 300~s: score, reward, normalised score, control penalty and kWh/t, score terms, steady/step against ramp/sine, per-scenario paired differences.}
+% RQ1, exploratory. Sources: mill docs/tdmpc/fair_v1_pilot_300s_gen12.md,
+% docs/explore_runs/fair_v1_explore_runs.md, docs/normalised_score.md.
+\TODO{Main table: champions, TD-MPC, decentralised PI and fixed recipe at
+300~s; score / reward / normalised score on the three batteries, terminal
+episodes in parentheses. The numbers are in THESIS\_GUIDE.md, Section~6.2.}
+
+\subsection{From several perspectives}
+\label{sec:mill-perspectives}
+\TODO{The score split into its terms, one row per controller: P80 outside
+range (and P80 IAE, reported), level band, circulating-load band and distance
+from 500\%, safety, energy (kWh/t), setpoint travel (reported), plus the
+control penalty. Which objective each controller gains or loses on.}
+
+\subsection{Where the differences are}
+\label{sec:mill-where}
+\TODO{Steady and step scenarios against ramp and sine scenarios (the
+TD-MPC's gap is mostly in ramps and sines, outside its constant-feed
+training); per disturbance kind; per-scenario paired differences (figure: one
+dot per scenario).}
+\TODO{One trajectory figure: one development scenario, champion against
+TD-MPC (level, P80, setpoints).}
 
 \section{Beyond the development range}
 \label{sec:mill-beyond}
-\TODO{Degradation from development to beyond range, terminal episodes, what fails (mostly the sump-level band), catalogue of failure modes with one trajectory each.}
+% RQ2, exploratory.
+\TODO{Degradation from development to beyond range on both measures;
+terminal episodes; what fails (mostly the sump-level band, then P80), per
+kind and pattern. Degradation against amplitude (1, 1.25, 1.5, 2) comes from
+the sealed battery (Section~\ref{sec:mill-sealed}); until then, development
+against beyond.}
+
+\subsection{Failure modes}
+\label{sec:mill-failure-modes}
+\TODO{Catalogue of failure modes (C2), each with one example trajectory; an
+empirical operating envelope for the LLM supervisor.}
 
 \section{Score and reward disagree on the sump level}
 \label{sec:mill-reward}
-\TODO{The reward split by term: the score charges nothing inside 70--80\%, the reward's level term is a narrow bell around 75\%; champions with equal scores differ in reward by how tightly they hold 75\%.}
+\TODO{Source: mill \texttt{docs/explore\_runs/reward\_terms\_v1.md}. The score
+charges nothing inside 70--80\%; the reward's level term costs about 8\% at
+1\% off 75\% and 26\% at 2\%. Champions with the same score differ in reward
+by how tightly they hold 75\%. Level is the largest reward loss for every
+controller beyond range. Figure: reward split by term per controller. This is
+a result, not a footnote: it explains every case where a champion wins on
+score but loses on reward.}
 
 \section{Decision interval}
 \label{sec:mill-interval}
-\TODO{Every controller is tuned to its own rate. One table with 60, 300 and 900~s. The 60~s comparison below is the first, exploratory one and becomes a variant here.}
+\TODO{Every controller is tuned to its own rate. One table with intervals as
+rows (60, 300, 900~s) for the TD-MPC, the 300~s champions and the 60~s
+champions (mill \texttt{docs/tdmpc/fair\_v1.md}, \texttt{fair\_v1\_900.md},
+\texttt{fair\_v1\_pilot\_300s\_gen12.md}): the TD-MPC at 900~s falls to near
+PI level; the 300~s pilot beats it at 300 and 900~s and does not break at
+60~s. The 60~s comparison below was the first, exploratory one; keep it as
+this variant, shortened.}
 
-\paragraph{First comparison with the TD-MPC, at 60~s.} The comparison was run on
+\paragraph{First comparison with the TD-MPC, at 60~s (exploratory).} The comparison was run on
 2026-10-31 with the champions of three independent LLM training runs after
 eight generations, on 28 development, 28 validation and 24 beyond-range
 scenarios of two hours each (Table~\ref{tab:mill-tdmpc}).
@@ -35,6 +99,7 @@ scenarios of two hours each (Table~\ref{tab:mill-tdmpc}).
     parentheses the number of episodes in which the sump overflowed or ran
     dry. The fixed recipe does not act.}
   \label{tab:mill-tdmpc}
+  \small\setlength{\tabcolsep}{4pt}
   \begin{tabular}{@{}llll@{}}
     \toprule
     Controller & Development & Validation & Beyond \\
@@ -72,13 +137,85 @@ differences are in the sump-level band, the P80 and, at 300~s, safety.
 
 \section{Robustness to noise}
 \label{sec:mill-noise-results}
-\TODO{Measurement noise on P80 (does not reach the TD-MPC), plant-wide measurement noise (reverses the noise-free ranking; the one-line level-trend estimator of explore\_run2), training under measurement noise (prompt version 7), fresh-feed fluctuations with measurement noise as ablation, and how to measure under noise (fresh draws, several draws per scenario).}
+% RQ2 quantified by noise category (Section sec:mill-noise): rows = noise
+% category / amplitude / temporal structure, columns = controllers.
+% Sources: mill docs/noise/noise_v1.md, docs/feed_noise.md,
+% docs/noise_training.md, docs/vm_week_2026-11-04_13.md (sections 3, 5-7).
+\TODO{Main table: reward (and score) per controller and noise category (none,
+P80 white, P80 analyser, plant-wide measurement, feed fluctuations, feed plus
+measurement) on the development battery; terminal episodes. If time allows,
+an amplitude sweep within one category so that RQ2's noise axis is a curve,
+not a point.}
+
+\subsection{Measurement noise}
+\TODO{P80 noise does not reach the TD-MPC (it does not read P80); the
+champions barely move. Plant-wide measurement noise reverses the noise-free
+ranking: \texttt{explore\_run2} (best without noise, reward 0.931) becomes the
+worst champion (0.529), \texttt{explore\_run3} the most robust (0.782). The
+cause is one line: a level trend from two samples 60~s apart; a 5-minute
+least-squares slope lifts its noisy reward to 0.706 and lowers its clean one
+to 0.834.}
+
+\subsection{Feed fluctuations}
+\TODO{\texttt{feed15} hurts every controller, the TD-MPC most (beyond: 3, 7
+and 11 terminal episodes for none, feed, and feed plus measurement); every
+champion keeps a higher reward than the TD-MPC under every noise.}
+
+\subsection{Training under noise}
+\TODO{Exploratory only, outside the protocol: prompt version~7 makes
+champions insensitive to measurement noise but not clearly better than the
+most robust noise-free champion.}
+
+\subsection{Measuring under noise}
+\TODO{One draw per scenario is not enough (one scenario's score doubled
+between draws); paired and fresh draws. Fairness caveat: the TD-MPC was also
+trained without noise.}
 
 \section{The generated supervisors}
 \label{sec:mill-champions}
-\TODO{What a champion looks like: length, structure, rule count (goal document), readability; the full listing in an appendix.}
+\TODO{What a champion looks like: length (\texttt{pilot\_300s}: 125 lines),
+structure (level-trend estimator driving the pressure setpoint, ore-density
+feedforward, P80 trim of the density setpoint, cyclone count, mill speed fixed
+near 11.8~rpm for energy), rule count (the goal document's complexity
+measure; count branches and thresholds per champion), and readability (terse
+names and few comments compared with the coordination champion). The full
+listing is in Appendix~\ref{app:mill-champion}.}
 
 \section{Confirmatory comparison on the sealed test battery}
 \label{sec:mill-sealed}
-\TODO{$H_{0,1}$, $H_{0,2}$ and C3 with intervals, after the protocol runs. If they are not run, state what the exploratory results can and cannot claim.}
+% Filled in after the eight protocol runs and the one sealed evaluation
+% (Section sec:protocol). All tests at alpha = 0.05.
+\TODO{After the protocol runs. If they are not run, this section becomes a
+list of what the exploratory results can and cannot claim (champions selected
+on development and validation; few runs per setting; no significance test;
+validation in the promotion rule; TD-MPC trained on constant feed for another
+reward).}
 
+\subsection{$H_{0,1}$: within the development range}
+\TODO{Mean paired difference LLM minus TD-MPC on \texttt{test\_dev} with 95\%
+intervals, score and reward (co-primary); equivalence (TOST, 90\% interval
+within $\pm 3.5$ score, $\pm 0.02$ reward); Cohen's $d_z$ with its interval,
+descriptive.}
+
+\subsection{$H_{0,2}$: degradation beyond the range}
+\TODO{Slope of mean $\log(1 + J_s)$ against amplitude level 1, 1.25, 1.5, 2,
+LLM minus TD-MPC, with 95\% interval; figure of score and reward against
+amplitude for each controller; the unseen sine periods.}
+
+\subsection{C3: spread between independent runs}
+\TODO{Per-policy means (median, IQR, range), between-policy SD with a
+chi-square interval, runs without a promotion.}
+
+\subsection{Secondary analyses}
+\TODO{Per metric (P80 outside range, P80 IAE, level band, CL band, safety,
+travel, energy, CL target) with Holm-corrected $p$-values; per kind and
+pattern; steady/step against ramp/sine; the 60 and 900~s and noise variants.}
+
+\section{Summary}
+\label{sec:mill-summary}
+\TODO{What we learned (guide): an LLM-written deterministic supervisor of
+about 100 lines can match or beat the deployed TD-MPC on this simulator at its
+own decision interval, degrades more gracefully beyond range and under noise
+(fewer terminal episodes), but the result depends on the run (spread), the
+metric (score against reward on the level) and the conditions (noise reverses
+rankings). Update with the sealed-test result.}
