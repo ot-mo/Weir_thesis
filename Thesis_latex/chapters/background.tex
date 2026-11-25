@@ -1,7 +1,12 @@
 \chapter{Background}
 \label{ch:background}
+% Purpose (THESIS_GUIDE.md, Ch. 2): what a control engineer needs to read the
+% thesis, organised around the three bodies of work in the goal document:
+% supervisory control of grinding circuits, learned controllers, and LLM-guided
+% program search. Target length 6-8 pages.
 
 \section{Supervisory process control}
+\label{sec:bg-supervisory}
 Industrial processes are usually controlled hierarchically. Fast PID loops at
 the base layer keep individual variables at their setpoints, while a slower
 supervisory layer chooses those setpoints, coordinates interacting loops and
@@ -10,18 +15,40 @@ multivariable process, the pairing of manipulated and controlled variables
 in the base layer matters: the relative gain array \cite{bristol1966} shows
 whether a decentralized pairing will work with or against the process
 interactions.
-\TODO{Expand with the supervisory structure used in grinding circuits and at Weir.}
 
-\section{Fault detection}
-A supervisor must decide from measurements alone whether a fault is present.
-Model-based fault detection compares measured behaviour with what a process
-model predicts for the fault-free case and raises an alarm when the residual
-is large enough \cite{isermann2006}. The trade-off between missed detections,
-false alarms and detection delay is central, and it is reflected directly in
-the scoring used in this thesis (Section~\ref{sec:scoring}).
-\TODO{Expand with residual generation and evaluation, and threshold selection.}
+\section{Supervisory control of grinding circuits}
+\label{sec:bg-grinding}
+\TODO{The goal document's first body of work; replaces the old TODO in the
+section above. Write 2-3 pages.}
+% - The circuit: ball mill, sump, pump, hydrocyclone cluster, product overflow,
+%   underflow returning to the mill; P80; circulating load; why it is coupled
+%   and nonlinear; what is measured and what is only inferred (P80 analysers).
+% - Typical regulatory loops (cyclone pressure via pump flow, sump density via
+%   sump water, mill water, number of cyclones, mill speed) - keep generic here;
+%   Weir's actual chain is in Chapter~\ref{ch:mill}.
+% - How supervision is done in practice: operators adjusting setpoints, expert
+%   systems, fuzzy-logic supervisors, MPC in mineral processing. Strengths and
+%   maintenance cost of each.
+% - References: e.g. Hodouin's review of process control in mineral processing,
+%   Wei & Craig's survey of grinding-mill circuit control (add to references.bib).
+
+\section{Learned controllers}
+\label{sec:bg-learned}
+TD-MPC \cite{hansen2022tdmpc} and TD-MPC2 \cite{hansen2024tdmpc2} learn a
+latent world model, plan over a short horizon in that model and bootstrap
+long-horizon value with temporal-difference learning. They are the learned,
+black-box side of the comparison in this thesis.
+\TODO{Expand (about 1-1.5 pages).}
+% - Latent model (encoder, latent dynamics, reward and value heads), planning
+%   horizon (MPPI over the latent model), value bootstrapping, reward design.
+% - What it can do that a rule set cannot: an implicit model of the whole
+%   circuit, trained on many episodes, plans over a horizon.
+% - The reverse: inspection, guarantees on what code can do, editing by an
+%   engineer; behaviour outside the training distribution is uncertain.
+% - Keep Weir's specific model (autumn-night-41) for Chapter~\ref{ch:mill}.
 
 \section{LLM-guided program search}
+\label{sec:bg-program-search}
 FunSearch \cite{romeraparedes2024funsearch} pairs an LLM with an automated
 evaluator in an evolutionary loop: the LLM proposes programs, the evaluator
 scores them, and the best programs are used as context for new proposals.
@@ -37,18 +64,31 @@ plans. \textcite{weng2026lbg} describes an
 iterative workflow in which a policy is improved by inspecting execution
 traces and rewriting code instead of through gradient updates. This thesis applies the
 pattern to supervisory control, where the evaluator is a closed-loop
-simulation with fault injection.
-
-\section{Learned controllers}
-TD-MPC \cite{hansen2022tdmpc} and TD-MPC2 \cite{hansen2024tdmpc2} learn a
-latent world model, plan over a short horizon in that model and bootstrap
-long-horizon value with temporal-difference learning. They are the learned,
-black-box side of the comparison in this thesis.
-\TODO{Summarize what TD-MPC can do that a readable rule set cannot, and vice versa.}
+simulation of the process.
+\TODO{One or two sentences on quality-diversity search and island models
+(FunSearch's islands), since the explore phase of prompt version 6
+(Section~\ref{sec:prompt-versions}) keeps three lineages for the same reason.}
 
 \section{Specification gaming}
+\label{sec:bg-gaming}
 An optimizer that is scored by a metric will exploit weaknesses in that
 metric \cite{amodei2016,krakovna2020}. LLM-guided search is no exception: in
 this work, candidates repeatedly found ways to improve the average score
 while behaving worse, which motivated the safeguards in
 Section~\ref{sec:scoring}.
+
+\section{Statistics for paired comparisons}
+\label{sec:bg-stats}
+\TODO{Short section (about 1 page): what the protocol in
+Section~\ref{sec:protocol} relies on.}
+% - Paired designs: every controller runs on the same scenarios, so compare
+%   per-scenario differences.
+% - Bootstrap confidence intervals; the hierarchical bootstrap (resample
+%   policies, then scenarios) when the LLM side has several independent runs.
+% - Significance level alpha = 0.05 (95 % intervals for H0,1 and H0,2).
+% - Absence of a significant difference is not equivalence: equivalence testing
+%   with two one-sided tests (TOST) and a margin fixed in advance (90 % interval
+%   inside the margin). This answers Kaige's question of what "negligible" means.
+% - Standardised effect size (Cohen's d_z for paired data) and why it is
+%   descriptive only here.
+% - Holm correction for the secondary metrics.
