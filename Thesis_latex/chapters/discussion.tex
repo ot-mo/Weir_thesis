@@ -5,16 +5,10 @@
 
 \section{The evaluation matters as much as the model}
 \label{sec:disc-evaluation}
-On every test bed, the largest improvements came from changes to the
-evaluation, not to the model. The search exploited every weakness in the
-score that it could find: constant flagging, breaking one scenario to win on
-average, and fitting the timing of the visible scenarios. On the
-quadruple-tank process, a long plateau turned out to be caused by the test
-bed itself, which a perfect-detection oracle exposed once it was computed.
-Checking that the test bed is sound, and bounding what
-is achievable, should come before interpreting the progress of the search.
-The coordination runs showed the same for the promotion rule and the
-feedback (Section~\ref{sec:tank-search}).
+On the tank test beds and on the grinding circuit, the largest improvements
+came from changes to the evaluation, not to the model: the search exploited
+every weakness in the score it could find, and a sound test bed had to come
+before the search (Section~\ref{sec:dev-lessons}).
 \TODO{Extend with the grinding-circuit examples: the shipped recipe was not an
 operating point; setpoint travel dominated the old score; energy dominates the
 current one (hence the control penalty and the normalised score); the decision
@@ -27,7 +21,7 @@ TD-MPC was trained on constant feed, without noise, for its own reward, by
 someone else, while the LLM saw the development battery. What each asymmetry
 does to the result, and which way. Fold in the tank lesson in one paragraph: a
 comparison is only as fair as the effort spent on the comparator (the tuned
-MPC, Section~\ref{sec:tank-comparator}).}
+MPC, Section~\ref{sec:dev-lessons}).}
 
 \section{Variance and lock-in}
 \label{sec:disc-variance}
@@ -40,18 +34,15 @@ bad start; several runs are needed (C3).}
 \TODO{Graceful failure (no terminal episodes) rather than better average
 performance per scenario; the level-trend estimator line; noise-free selection
 does not select for robustness; the four-tank stress test showed the same with
-a tuned MPC (Section~\ref{sec:tank-robustness}).}
+a tuned MPC (Section~\ref{sec:dev-lessons}).}
 
-\section{Reasoning}
+\section{Reasoning effort}
 \label{sec:disc-reasoning}
-Without reasoning, the LLM made steady early progress at about a
-twenty-fifth of the cost, but then stalled, wrote physically incorrect
-lessons and made avoidable coding mistakes. Because lessons are shown to
-later generations as constraints, an incorrect lesson can keep steering the
-search in the wrong direction. Low reasoning was enough to reach the oracle
-on leak detection and was about six times cheaper than high reasoning.
-\TODO{Shorten; add the grinding circuit: effort low throughout, and high
-effort in the explore phase cost twice as much without a gain.}
+\TODO{Short: some reasoning is needed (tank ablation,
+Section~\ref{sec:dev-lessons}), and on the grinding circuit effort low was
+enough: high effort in the explore phase cost twice as much and gave larger
+designs without a gain (Section~\ref{sec:mill-runs}). Models were not compared
+on the mill.}
 
 \section{Interpretability in practice}
 \label{sec:disc-interpretability}
@@ -62,7 +53,7 @@ cannot import modules, touch files or run indefinitely. This is the main
 advantage over a learned black-box controller.
 \TODO{Rewrite with the mill examples: the one-line diagnosis and fix of
 \texttt{explore\_run2} under noise; constants that tie code to the loop tuning
-(four-tank, Section~\ref{sec:coord-champion}); the terse code of the mill
+(four-tank, Appendix~\ref{app:tanks}); the terse code of the mill
 runs; what an engineer would need (comments, names, rule count).}
 
 \section{Cost and practicality}

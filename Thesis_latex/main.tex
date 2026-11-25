@@ -16,6 +16,8 @@
 
 % Marks text that is still to be written. Search for \TODO before submission.
 \newcommand{\TODO}[1]{\textbf{[TODO: #1]}}
+% Lets lines with long file names inside TODOs break instead of overflowing.
+\setlength{\emergencystretch}{3em}
 
 \begin{document}
 \begin{titlepages}
@@ -38,7 +40,6 @@
 \input{chapters/introduction}
 \input{chapters/background}
 \input{chapters/method}
-\input{chapters/tank_development}
 \input{chapters/mill_setup}
 \input{chapters/mill_results}
 \input{chapters/discussion}
@@ -49,8 +50,6 @@
 \appendix
 \input{chapters/appendix_mill_champion}
 \input{chapters/appendix_tanks}
-\input{chapters/appendix_four_tank_protocol}
 \input{chapters/appendix_prompt}
 \input{chapters/appendix_noise}
-\input{chapters/appendix_supervisor}
 \end{document}

@@ -473,26 +473,23 @@ study with operators.
   which is otto's call (Section 4, Ch. 4 above).
 - Not compiled here (no TeX in the cloud container); compile locally with the commands in `CLAUDE.md`.
 
-### 2026-11-25: the LaTeX follows this guide as a skeleton
+### 2026-11-25: mill-first skeleton (otto: move away from the tanks)
 
-- The two tank chapters are merged into `chapters/tank_development.tex` (*Developing the method on
-  tank processes*, `ch:tanks`), lessons first, with the kept tables and figure (`tab:four`,
-  `fig:reasoning`, `tab:reasoning`, `tab:coord-main`, `tab:coord-stress`, `tab:coord-analog`).
-  Dropped: `tab:coord-metrics`, `tab:coord-kind`, the five-step champion walkthrough, the long
-  test-bed and baseline descriptions (TODOs say what to keep in short form). `toy_examples.tex` and
-  `coordination.tex` are deleted; their text is in git history.
-- New appendices: A mill champion listing (`app:mill-champion`), B tank details (`app:tanks`:
-  fault-detection interface and score `eq:score`, single/two-tank, `tab:summary`, the full run table
-  `tab:coord-runs`), C the four-tank protocol (`app:four-tank-protocol`), D prompt excerpt, E noise
-  parameters, and the quadruple-tank listing (`app:supervisor`, keep only if pages allow).
-- Background: *Fault detection* removed; new sections for grinding-circuit control and paired
-  statistics (TODOs).
-- Method: tank-only parts (fault-detection interface and score, per-scenario guard, four-tank MPC)
-  moved out; new subsections for prompt versions and simulation engineering; the protocol section
-  is a skeleton of the registered mill protocol (version 1, 2026-11-18: v6, 12 gens, effort low, no
-  noise training, N = 8, margin ±3.5 / ±0.02, d_z descriptive, α = 0.05).
-- Mill setup, results, discussion, conclusions, abstract and introduction: section skeletons with
-  TODOs and `%` comments, keeping only the text this guide says to keep. The noise sections are
-  organised by noise category (where it enters, amplitude, temporal structure) for RQ2.
-- Compiles cleanly (56 pages, no undefined references or overfull boxes). Search `\TODO` for
-  what is left.
+otto chose the guide's alternative in Section 2: no tank chapter. Structure now:
+
+| # | Chapter | File |
+|---|---|---|
+| 1 | Introduction | `introduction.tex` |
+| 2 | Background (grinding-circuit control, TD-MPC, program search, gaming, paired statistics; fault detection removed) | `background.tex` |
+| 3 | Method, the synthesis framework, ending with a one-page *Lessons from developing the method on tank processes* (`sec:dev-lessons`) and the registered mill protocol | `method.tex` |
+| 4 | The grinding circuit and the comparison: plant, operating point, interface (300 s), batteries and ranges, score equation, control penalty, normalised score, TD-MPC, baselines, noise categories | `mill_setup.tex` |
+| 5 | Results on the grinding circuit: runs, main comparison at 300 s, by objective, beyond range, score vs reward, decision interval, noise, the supervisors, sealed test (TODO) | `mill_results.tex` |
+| 6 | Discussion (mill themes) | `discussion.tex` |
+| 7 | Conclusions and future work | `conclusions.tex` |
+| A | Mill champion listing (TODO) | `appendix_mill_champion.tex` |
+| B | Development on tank processes: all tank lessons with evidence, test-bed details, run table, four-tank protocol | `appendix_tanks.tex` |
+| C, D | Prompt excerpt, noise parameters (TODO) | `appendix_prompt.tex`, `appendix_noise.tex` |
+
+Chapters 4 and 5 carry the merged numbers from the mill repo's `docs/` (PROTOCOL.md v1, tdmpc/,
+explore_runs/, normalised_score.md, noise/, feed_noise.md, noise_training.md) in tables, with short
+factual text; the interpretation and the sealed test are `\TODO`s. Compiles cleanly (55 pages).
