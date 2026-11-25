@@ -1,33 +1,18 @@
-% Draft abstract based on the toy-example results; revise once the industrial
-% comparison is done.
+% Rewrite last, mill-first, once the results chapter has its numbers
+% (THESIS_GUIDE.md, Abstract). One page.
 Advanced process controllers based on learned models, such as TD-MPC, can
 perform well but are hard to inspect, verify and audit. This thesis
 investigates an alternative in which a large language model (LLM) is used
 \emph{offline} as a meta-supervisor: it reads logs, scores and decision
 traces from a simulated process and writes a small, deterministic supervisory
-function in Python. The function runs on top of fixed PID loops, raises
-per-loop anomaly flags and adjusts setpoints. Every candidate passes a static
-security check and a sandboxed evaluation on a battery of fault scenarios, and
-is only promoted if it improves on the current champion without regressing
-any single scenario.
-
-The approach is developed on three toy processes of increasing difficulty: a
-single leaking tank, a two-tank cascade, and the quadruple-tank process. On
-all three, the generated supervisors reduced the score on the development
-scenarios by 72--96\% compared with PID control alone. On the quadruple-tank process, supervisors
-generated with LLM reasoning enabled matched a perfect-detection oracle on
-both the development and the held-out scenarios within two to three
-generations, whereas the same search without reasoning stagnated at about
-4.5 times the oracle score. The experiments also show that the design of the
-evaluation, including safeguards against specification gaming and checks that
-the test bed itself is sound, matters as much as the choice of model. On a
-setpoint-coordination version of the quadruple-tank process, which rehearses
-the industrial comparison, the best generated supervisor of the exploratory
-runs halved the score of the fixed operating recipe but scored 67\% worse
-than a model predictive controller tuned with a comparable budget, once the
-regulatory loops were retuned; it had been within 1.3\% of an untuned
-controller with the original loops. Both degraded at similar rates beyond the
-development range, and the generated supervisor was the more robust of the two
-to measurement noise. A pre-registered protocol with eight independent runs
-and a sealed test battery fixes the confirmatory comparison.
-\TODO{Add the result of the comparison on the industrial process and against TD-MPC.}
+function in Python, which runs on top of the existing PID loops and adjusts
+their setpoints.
+\TODO{The grinding circuit and Weir's deployed TD-MPC as comparator, both at
+300~s, under a pre-registered protocol.}
+\TODO{The headline comparison (sealed-test results if run, otherwise the
+exploratory ones, with ``exploratory'' in the sentence), on both the score and
+the TD-MPC's reward.}
+\TODO{Robustness beyond the development range and under the noise
+categories; the run-to-run spread (C3); cost per run (about US\$3--4).}
+\TODO{One sentence on the development of the method on tank processes, and
+the main caveat.}

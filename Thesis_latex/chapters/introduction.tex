@@ -62,6 +62,9 @@ degrades.
   disturbances fall outside the development range, and what failure modes
   and empirical operating limits can be identified?
 \end{description}
+\TODO{Say how RQ2 covers noise: as categories of disturbance and measurement
+noise, quantified by amplitude and temporal structure
+(Section~\ref{sec:mill-noise}).}
 The research questions are tested through the following null hypotheses:
 \begin{description}
 \item[$\boldsymbol{H_{0,1}}$:] Within the development range, there is no
@@ -87,28 +90,38 @@ The expected scientific contributions are:
   generated policies, indicating how reliable LLM-based synthesis is as a
   design method.
 \end{description}
-Before the industrial study, the method was developed on three toy processes
-of increasing difficulty (Chapter~\ref{ch:toy}): a single tank, a two-tank
-cascade and the quadruple-tank process. This preliminary work produced the
-architecture, the security sandbox and the evaluation safeguards used in the
-industrial study, and an ablation of how much LLM reasoning the synthesis
-needs. A setpoint-coordination version of the quadruple-tank process then
-rehearsed the comparison of RQ1 and RQ2 against a model predictive
-controller (Chapter~\ref{ch:coord}).
-\TODO{Add the industrial case study and the comparison with TD-MPC.}
+\TODO{Replace with what the thesis actually delivers, beside C1--C3
+(answered by the grinding-circuit protocol):}
+% (a) a training loop for LLM-synthesised supervisors with the safeguards that
+%     made it work (Chapters ch:method and ch:tanks);
+% (b) a fair-comparison harness for an LLM supervisor and a learned
+%     world-model controller on the same simulator, interface, wrapper,
+%     batteries and two metrics (Chapter ch:mill);
+% (c) robustness results under measurement noise and feed fluctuations, by
+%     noise category (Section sec:mill-noise-results).
 
 \section{Delimitations}
+\label{sec:delimitations}
 The study is limited to one grinding circuit in simulation. Formal stability
 guarantees, plant deployment and sensor-fault diagnosis are outside the
 scope.
+\TODO{Add: one operating point (the goal document asks for several); the main
+comparison is noise-free (noise is a variant); one LLM family on the grinding
+circuit (Claude Opus 5.5, effort low); the TD-MPC as delivered, not
+retrained.}
 
 \section{Outline}
-Chapter~\ref{ch:background} gives background on supervisory process control,
-fault detection and LLM-guided program search. Chapter~\ref{ch:method}
-describes the architecture, the security sandbox and safety wrapper, the
-scoring, the training loop, the language models, the comparators, the
-pre-registered protocol and the grinding-circuit setup. Chapter~\ref{ch:toy} presents the three toy examples and
-their results, and Chapter~\ref{ch:coord} applies the method to setpoint
-coordination and compares it with model predictive control.
-Chapter~\ref{ch:discussion} discusses the findings and their
-limitations, and Chapter~\ref{ch:conclusions} concludes.
+\label{sec:outline}
+Chapter~\ref{ch:background} gives background on supervisory control of
+grinding circuits, learned controllers, LLM-guided program search and the
+statistics of paired comparisons. Chapter~\ref{ch:method} describes the
+synthesis framework: the architecture, the security sandbox and safety
+wrapper, scoring and promotion, the training loop, the language models, the
+comparators and the pre-registered protocol. Chapter~\ref{ch:tanks} tells how
+the method was developed on tank processes and what each part of it was added
+for. Chapter~\ref{ch:mill} describes the grinding circuit and how the
+comparison with the TD-MPC is set up, and Chapter~\ref{ch:mill-results}
+presents the results. Chapter~\ref{ch:discussion} discusses the findings and
+their limitations, and Chapter~\ref{ch:conclusions} answers the research
+questions.
+\TODO{Check against the final chapter order.}
